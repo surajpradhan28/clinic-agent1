@@ -14,7 +14,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from datetime import date, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 import database as db
@@ -130,6 +133,48 @@ async def _run_reminders() -> None:
         logger.error("[Scheduler] Reminder job error: %s", exc, exc_info=True)
 
 
+# ── Job 3: Send daily appointment schedule to doctor (Suite plan only) ────────
+
+async def _run_daily_doctor_schedule() -> None:
+    """
+    Every morning at DAILY_SCHEDULE_HOUR (UTC), send the doctor's WhatsApp
+    a formatted list of today's confirmed appointments.
+    Only active on Suite plan with DOCTOR_PHONE set.
+    """
+    if settings.PLAN_TIER.lower() != "suite":
+        return
+    if not settings.DOCTOR_PHONE:
+        logger.warning("[Scheduler] Daily schedule: DOCTOR_PHONE not set — skipping")
+        return
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    today_display = date.today().strftime("%d %B %Y (%A)")
+
+    logger.info("[Scheduler] Sending daily schedule for %s to doctor", today_str)
+    try:
+        appointments = db.get_appointments_for_date(today_str)
+
+        if not appointments:
+            message = (
+                f"📅 *{settings.CLINIC_NAME} — {today_display}*\n\n"
+                f"No appointments scheduled for today. Have a great day, {settings.DOCTOR_NAME}! 😊"
+            )
+        else:
+            lines = [f"📅 *{settings.CLINIC_NAME}*", f"*{today_display}*", f"Total: {len(appointments)} appointment(s)\n"]
+            for i, appt in enumerate(appointments, 1):
+                lines.append(f"{i}. *{appt['slot_time']}* — {appt['patient_name']} ({appt['patient_phone']})")
+            message = "\n".join(lines)
+
+        success = await whatsapp.send_text(settings.DOCTOR_PHONE, message)
+        if success:
+            logger.info("[Scheduler] Daily schedule sent to doctor (%s appts)", len(appointments))
+        else:
+            logger.error("[Scheduler] Failed to send daily schedule to doctor")
+
+    except Exception as exc:
+        logger.error("[Scheduler] Daily schedule job error: %s", exc, exc_info=True)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -148,10 +193,26 @@ def start() -> None:
         replace_existing=True,
         misfire_grace_time=300,
     )
+
+    # Daily doctor schedule — Suite plan only
+    if settings.PLAN_TIER.lower() == "suite" and settings.DOCTOR_PHONE:
+        scheduler.add_job(
+            _run_daily_doctor_schedule,
+            trigger=CronTrigger(hour=settings.DAILY_SCHEDULE_HOUR, minute=0),
+            id="daily_doctor_schedule",
+            replace_existing=True,
+            misfire_grace_time=600,
+        )
+        logger.info(
+            "[Scheduler] Daily doctor schedule job registered — fires at %02d:00 UTC",
+            settings.DAILY_SCHEDULE_HOUR,
+        )
+
     scheduler.start()
     logger.info(
-        "[Scheduler] Started — follow-up + reminder jobs every %dh",
+        "[Scheduler] Started — follow-up + reminder jobs every %dh (plan: %s)",
         settings.JOB_INTERVAL_HOURS,
+        settings.PLAN_TIER,
     )
 
 

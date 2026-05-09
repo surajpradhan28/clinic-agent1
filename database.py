@@ -152,6 +152,77 @@ def get_booked_slots(date: str) -> list[str]:
     return [row["slot_time"] for row in result.data] if result.data else []
 
 
+def get_upcoming_appointment(phone: str) -> dict | None:
+    """
+    Return the next confirmed appointment for this patient (soonest future slot).
+    Returns None if no upcoming appointment exists.
+    """
+    db = get_db()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    result = (
+        db.table("appointments")
+        .select("*")
+        .eq("patient_phone", phone)
+        .eq("status", "confirmed")
+        .gte("appointment_date", today)
+        .order("appointment_date", desc=False)
+        .order("slot_time", desc=False)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def cancel_appointment(appt_id: int) -> None:
+    """Mark an appointment as cancelled, freeing the slot."""
+    db = get_db()
+    db.table("appointments").update(
+        {"status": "cancelled", "cancelled_at": _now()}
+    ).eq("id", appt_id).execute()
+    # Also cancel any pending followup for this appointment
+    db.table("followups").update(
+        {"status": "cancelled"}
+    ).eq("appointment_id", appt_id).eq("status", "pending").execute()
+    logger.info("Appointment %s cancelled", appt_id)
+
+
+def reschedule_appointment(
+    old_appt_id: int,
+    phone: str,
+    patient_name: str,
+    new_date: str,
+    new_slot: str,
+) -> dict:
+    """
+    Cancel the old appointment and create a new one.
+    Returns the new appointment row.
+    """
+    cancel_appointment(old_appt_id)
+    new_appt = create_appointment(phone, patient_name, new_date, new_slot)
+    logger.info(
+        "Rescheduled appt %s → new appt %s on %s %s",
+        old_appt_id, new_appt["id"], new_date, new_slot,
+    )
+    return new_appt
+
+
+def get_appointments_for_date(date: str) -> list[dict]:
+    """
+    Return all confirmed appointments for a given date, ordered by slot time.
+    Used by the daily doctor schedule job.
+    """
+    db = get_db()
+    result = (
+        db.table("appointments")
+        .select("patient_name, patient_phone, slot_time")
+        .eq("appointment_date", date)
+        .eq("status", "confirmed")
+        .order("slot_time", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
 def get_appointments_for_reminder() -> list[dict]:
     """
     Return appointments that:
@@ -332,6 +403,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     status              text DEFAULT 'confirmed',  -- confirmed|completed|cancelled
     reminder_sent       boolean DEFAULT false,
     completed_at        timestamptz,
+    cancelled_at        timestamptz,
     created_at          timestamptz DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_appointments_phone

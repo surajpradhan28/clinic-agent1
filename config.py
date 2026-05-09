@@ -40,6 +40,16 @@ class Settings:
     EVENING_END: str = "20:00"
     SLOT_DURATION_MIN: int = 30
 
+    # ── Plan Tier ─────────────────────────────────────────────────────────────
+    # starter : booking + 24h reminders
+    # pro     : + cancellation + reschedule
+    # suite   : + daily doctor schedule WhatsApp
+    PLAN_TIER: str = os.getenv("PLAN_TIER", "starter")  # starter | pro | suite
+
+    # ── Doctor WhatsApp (Suite plan — daily schedule) ─────────────────────────
+    DOCTOR_PHONE: str = os.getenv("DOCTOR_PHONE", "")   # e.g. "919876543210"
+    DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "7"))  # 7 AM UTC
+
     # ── Scheduler ─────────────────────────────────────────────────────────────
     FOLLOWUP_DAYS: int = 7          # days after appointment to send follow-up
     REMINDER_HOURS_BEFORE: int = 24  # hours before appointment to send reminder

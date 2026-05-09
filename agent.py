@@ -54,7 +54,8 @@ ALL_SLOTS = _generate_all_slots()
 
 # ── OpenAI Tool Definitions ───────────────────────────────────────────────────
 
-TOOLS = [
+# Tools available on ALL plans
+_TOOLS_BASE = [
     {
         "type": "function",
         "function": {
@@ -113,6 +114,83 @@ TOOLS = [
     },
 ]
 
+# Tools available on Pro + Suite plans only
+_TOOLS_PRO = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_my_appointment",
+            "description": (
+                "Look up the patient's next upcoming confirmed appointment. "
+                "Call this when a patient asks about their booking, wants to cancel, or wants to reschedule."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_appointment",
+            "description": (
+                "Cancel the patient's upcoming appointment. "
+                "Always call get_my_appointment first to confirm which appointment to cancel. "
+                "Ask the patient to confirm before calling this."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appointment_id": {
+                        "type": "integer",
+                        "description": "ID of the appointment to cancel (from get_my_appointment result)",
+                    }
+                },
+                "required": ["appointment_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reschedule_appointment",
+            "description": (
+                "Reschedule the patient's existing appointment to a new date and time. "
+                "Always call get_my_appointment first, then check_available_slots for the new date, "
+                "then ask patient to confirm the new slot before calling this."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appointment_id": {
+                        "type": "integer",
+                        "description": "ID of the existing appointment to reschedule",
+                    },
+                    "new_date": {
+                        "type": "string",
+                        "description": "New appointment date in YYYY-MM-DD format",
+                    },
+                    "new_slot": {
+                        "type": "string",
+                        "description": "New time slot in HH:MM format (e.g. '11:00')",
+                    },
+                },
+                "required": ["appointment_id", "new_date", "new_slot"],
+            },
+        },
+    },
+]
+
+
+def _get_tools() -> list[dict]:
+    """Return tool list based on the active plan tier."""
+    tier = settings.PLAN_TIER.lower()
+    if tier in ("pro", "suite"):
+        return _TOOLS_BASE + _TOOLS_PRO
+    return _TOOLS_BASE
+
+
+# Keep a module-level alias for backwards compatibility
+TOOLS = _TOOLS_BASE
+
 
 # ── Function execution ────────────────────────────────────────────────────────
 
@@ -167,6 +245,58 @@ async def _execute_function(
         }
         return json.dumps(result), None
 
+    # ── Pro / Suite plan tools ────────────────────────────────────────────────
+
+    elif fn_name == "get_my_appointment":
+        appt = db.get_upcoming_appointment(phone)
+        if appt:
+            result = {
+                "found": True,
+                "appointment_id": appt["id"],
+                "date": appt["appointment_date"],
+                "slot_time": appt["slot_time"],
+                "patient_name": appt["patient_name"],
+                "status": appt["status"],
+            }
+        else:
+            result = {"found": False, "message": "No upcoming appointment found."}
+        return json.dumps(result), None
+
+    elif fn_name == "cancel_appointment":
+        appt_id = fn_args.get("appointment_id")
+        if not appt_id:
+            return json.dumps({"success": False, "error": "appointment_id is required"}), None
+        try:
+            db.cancel_appointment(int(appt_id))
+            return json.dumps({"success": True, "message": f"Appointment {appt_id} cancelled successfully."}), None
+        except Exception as exc:
+            logger.error("cancel_appointment error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)}), None
+
+    elif fn_name == "reschedule_appointment":
+        appt_id  = fn_args.get("appointment_id")
+        new_date = fn_args.get("new_date", "")
+        new_slot = fn_args.get("new_slot", "")
+        if not all([appt_id, new_date, new_slot]):
+            return json.dumps({"success": False, "error": "appointment_id, new_date and new_slot are all required"}), None
+        try:
+            # Fetch current appointment to get patient name
+            cur = db.get_upcoming_appointment(phone)
+            patient_name = cur["patient_name"] if cur else "Patient"
+            new_appt = db.reschedule_appointment(int(appt_id), phone, patient_name, new_date, new_slot)
+            result = {
+                "success": True,
+                "new_appointment_id": new_appt["id"],
+                "patient_name": patient_name,
+                "new_date": new_date,
+                "new_slot": new_slot,
+                "message": f"Appointment rescheduled to {new_date} at {new_slot}.",
+            }
+            return json.dumps(result), new_appt
+        except Exception as exc:
+            logger.error("reschedule_appointment error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)}), None
+
     return json.dumps({"error": f"Unknown function: {fn_name}"}), None
 
 
@@ -174,6 +304,16 @@ async def _execute_function(
 
 def _build_system_prompt() -> str:
     today = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
+    tier = settings.PLAN_TIER.lower()
+
+    cancel_reschedule_rules = ""
+    if tier in ("pro", "suite"):
+        cancel_reschedule_rules = """
+- If a patient wants to CANCEL: call get_my_appointment first to confirm details, show them the appointment, ask them to confirm cancellation, then call cancel_appointment.
+- If a patient wants to RESCHEDULE: call get_my_appointment to find their current booking, ask for their preferred new date, call check_available_slots, let them pick a slot, confirm, then call reschedule_appointment.
+- Always confirm with the patient before cancelling or rescheduling — these are irreversible actions.
+"""
+
     return f"""You are Meera, a warm and professional appointment assistant for {settings.CLINIC_NAME} (run by {settings.DOCTOR_NAME}).
 
 Today's date is {today}.
@@ -182,6 +322,7 @@ Your job is to help patients:
 1. Book appointments at the clinic
 2. Answer questions about the clinic (timings, address, doctor)
 3. Handle general health-related queries politely (do NOT give medical advice)
+4. Help patients cancel or reschedule their appointments (if available)
 
 Guidelines:
 - Be warm, concise, and helpful. Use a friendly Indian conversational tone.
@@ -195,7 +336,7 @@ Guidelines:
 - For anything medical (diagnosis, medicines, dosage), politely say "Please consult {settings.DOCTOR_NAME} during your appointment."
 - Respond in the same language the patient uses (Hindi or English).
 - If the patient greets you in Hindi (e.g., "Namaste", "Haan", "Theek hai"), reply warmly in Hindi.
-"""
+{cancel_reschedule_rules}"""
 
 
 # ── Main agent entry point ────────────────────────────────────────────────────
@@ -216,10 +357,11 @@ async def get_agent_reply(phone: str, user_text: str) -> tuple[str, dict | None]
     ]
 
     # 3. First OpenAI call
+    active_tools = _get_tools()
     response = await _client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=messages,
-        tools=TOOLS,
+        tools=active_tools,
         tool_choice="auto",
         max_tokens=500,
         temperature=0.7,
@@ -259,7 +401,7 @@ async def get_agent_reply(phone: str, user_text: str) -> tuple[str, dict | None]
         response = await _client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=messages,
-            tools=TOOLS,
+            tools=active_tools,
             tool_choice="auto",
             max_tokens=500,
             temperature=0.7,
