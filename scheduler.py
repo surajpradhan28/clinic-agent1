@@ -55,13 +55,12 @@ async def _run_followups() -> None:
                 continue
 
             message = (
-                f"Hello {name}! 😊 Hope you're feeling better.\n\n"
-                f"It's been 7 days since your visit to {settings.CLINIC_NAME}. "
-                f"How are you feeling?\n\n"
-                f"Reply:\n"
-                f"1️⃣  *Better* — I'm feeling great!\n"
-                f"2️⃣  *Same* — About the same\n"
-                f"3️⃣  *Worse* — Not feeling well"
+                f"Hi *{name}!* 👋\n\n"
+                f"It's been a week since your visit with *{settings.DOCTOR_NAME}.* "
+                f"How are you feeling now?\n\n"
+                f"1️⃣  *Better / Recovered* 😊\n"
+                f"2️⃣  *Same as before* 😐\n"
+                f"3️⃣  *Not well / Getting worse* 😔"
             )
 
             success = await whatsapp.send_text(phone, message)
@@ -111,11 +110,14 @@ async def _run_reminders() -> None:
                 date_display = date
 
             message = (
-                f"📅 *Appointment Reminder*\n\n"
-                f"Hello {name}! This is a reminder from {settings.CLINIC_NAME}.\n\n"
-                f"Your appointment with {settings.DOCTOR_NAME} is *tomorrow* at *{slot}*.\n\n"
+                f"⏰ *Appointment Reminder!*\n\n"
+                f"Hi *{name}!* This is a reminder for your appointment tomorrow.\n\n"
+                f"🏥 *{settings.CLINIC_NAME}*\n"
+                f"👨‍⚕️ {settings.DOCTOR_NAME}\n"
+                f"📅 *{date_display}*\n"
+                f"⏰ *{slot}*\n"
                 f"📍 {settings.CLINIC_ADDRESS}\n\n"
-                f"Please arrive 5-10 minutes early. See you tomorrow! 😊"
+                f"Please arrive 5-10 minutes early. See you tomorrow! 🙏"
             )
 
             success = await whatsapp.send_text(phone, message)
@@ -154,15 +156,23 @@ async def _run_daily_doctor_schedule() -> None:
     try:
         appointments = db.get_appointments_for_date(today_str)
 
+        # Extract doctor's first name for a warm greeting
+        first_name = settings.DOCTOR_NAME.split()[-1]  # e.g. "Dr. Nishat Shaikh" → "Shaikh"
+
         if not appointments:
             message = (
-                f"📅 *{settings.CLINIC_NAME} — {today_display}*\n\n"
-                f"No appointments scheduled for today. Have a great day, {settings.DOCTOR_NAME}! 😊"
+                f"☀️ *Good Morning, Dr. {first_name}!*\n\n"
+                f"No appointments scheduled for today.\n"
+                f"Have a relaxing day! 😊"
             )
         else:
-            lines = [f"📅 *{settings.CLINIC_NAME}*", f"*{today_display}*", f"Total: {len(appointments)} appointment(s)\n"]
-            for i, appt in enumerate(appointments, 1):
-                lines.append(f"{i}. *{appt['slot_time']}* — {appt['patient_name']} ({appt['patient_phone']})")
+            lines = [
+                f"☀️ *Good Morning, Dr. {first_name}!*",
+                f"Your schedule for *{today_display}*\n",
+            ]
+            for appt in appointments:
+                lines.append(f"⏰ *{appt['slot_time']}*  —  {appt['patient_name']}")
+            lines.append(f"\n_{len(appointments)} appointment(s) today. Have a great day! 🏥_")
             message = "\n".join(lines)
 
         success = await whatsapp.send_text(settings.DOCTOR_PHONE, message)

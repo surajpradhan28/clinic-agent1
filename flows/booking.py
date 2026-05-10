@@ -44,6 +44,7 @@ async def _send_booking_confirmation(phone: str, appt: dict) -> None:
     name = appt.get("patient_name", "Patient")
     date_str = appt.get("appointment_date", "")
     slot = appt.get("slot_time", "")
+    appt_id = appt.get("id", "")
 
     # Format date nicely  e.g. "Wednesday, 02 April 2026"
     try:
@@ -53,15 +54,30 @@ async def _send_booking_confirmation(phone: str, appt: dict) -> None:
     except Exception:
         date_display = date_str
 
+    # Format booking ID  e.g. "CLN-20260402-0042"
+    try:
+        booking_id = f"BK-{date_str.replace('-', '')}-{int(appt_id):04d}"
+    except Exception:
+        booking_id = str(appt_id)
+
+    # Cancel/reschedule footer — Pro/Suite patients can do it via WhatsApp
+    tier = settings.PLAN_TIER.lower()
+    if tier in ("pro", "suite"):
+        footer = "_To cancel or reschedule, just reply 'cancel' or 'reschedule' anytime._"
+    else:
+        footer = "_To cancel or reschedule, please call the clinic._"
+
     confirmation = (
-        f"✅ *Appointment Confirmed!*\n\n"
+        f"✅ *Appointment Confirmed!*\n"
+        f"_{settings.CLINIC_NAME}_\n\n"
         f"👤 *Patient:* {name}\n"
+        f"👨‍⚕️ *Doctor:* {settings.DOCTOR_NAME}\n"
         f"📅 *Date:* {date_display}\n"
         f"⏰ *Time:* {slot}\n"
-        f"👨‍⚕️ *Doctor:* {settings.DOCTOR_NAME}\n"
         f"📍 *Location:* {settings.CLINIC_ADDRESS}\n\n"
-        f"A reminder will be sent 24 hours before your appointment.\n\n"
-        f"_To cancel or reschedule, please call the clinic._"
+        f"🔖 *Booking ID:* `{booking_id}`\n\n"
+        f"A reminder will be sent 24 hours before your appointment. 🙏\n\n"
+        f"{footer}"
     )
     await whatsapp.send_text(phone, confirmation)
     logger.info(

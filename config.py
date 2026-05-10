@@ -50,6 +50,14 @@ class Settings:
     DOCTOR_PHONE: str = os.getenv("DOCTOR_PHONE", "")   # e.g. "919876543210"
     DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "7"))  # 7 AM UTC
 
+    # ── Recurring schedule rules ──────────────────────────────────────────────
+    # Comma-separated day names when clinic is closed (e.g. "Sunday" or "Saturday,Sunday")
+    WEEKLY_OFF_DAYS: list = [
+        d.strip()
+        for d in os.getenv("WEEKLY_OFF_DAYS", "Sunday").split(",")
+        if d.strip()
+    ]
+
     # ── Scheduler ─────────────────────────────────────────────────────────────
     FOLLOWUP_DAYS: int = 7          # days after appointment to send follow-up
     REMINDER_HOURS_BEFORE: int = 24  # hours before appointment to send reminder

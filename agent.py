@@ -192,6 +192,107 @@ def _get_tools() -> list[dict]:
 TOOLS = _TOOLS_BASE
 
 
+# ── Doctor-only tools ─────────────────────────────────────────────────────────
+
+_TOOLS_DOCTOR = [
+    # Doctor can also check availability
+    {
+        "type": "function",
+        "function": {
+            "name": "check_available_slots",
+            "description": "Check available appointment slots for a date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format"}
+                },
+                "required": ["date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_appointments",
+            "description": (
+                "View all confirmed appointments for a specific date. "
+                "Call this when the doctor asks about their schedule or today's patients."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format"}
+                },
+                "required": ["date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "block_slots",
+            "description": (
+                "Block appointment slots on a date so patients cannot book them. "
+                "Use slot_times=['all'] to block the entire day. "
+                "Otherwise pass specific times like ['10:00','10:30']."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
+                    "slot_times": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of HH:MM slot times to block, or ['all'] to block entire day",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Optional reason for the block (e.g. 'Personal leave', 'Holiday')",
+                    },
+                },
+                "required": ["date", "slot_times"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unblock_slots",
+            "description": (
+                "Remove blocks from slots on a date, making them bookable again. "
+                "Use slot_times=['all'] to unblock the entire day."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
+                    "slot_times": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of HH:MM slot times to unblock, or ['all'] to unblock entire day",
+                    },
+                },
+                "required": ["date", "slot_times"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_blocked_slots",
+            "description": "View which slots are currently blocked on a specific date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format"}
+                },
+                "required": ["date"],
+            },
+        },
+    },
+]
+
+
 # ── Function execution ────────────────────────────────────────────────────────
 
 async def _execute_function(
@@ -203,8 +304,29 @@ async def _execute_function(
     """
     if fn_name == "check_available_slots":
         date = fn_args.get("date", "")
+
+        # Weekly off check
+        try:
+            day_name = datetime.strptime(date, "%Y-%m-%d").strftime("%A")
+            if day_name in settings.WEEKLY_OFF_DAYS:
+                return json.dumps({
+                    "date": date,
+                    "morning_slots": [],
+                    "evening_slots": [],
+                    "total_available": 0,
+                    "note": f"Clinic is closed on {day_name}s.",
+                }), None
+        except ValueError:
+            pass
+
         booked = db.get_booked_slots(date)
-        available = [s for s in ALL_SLOTS if s not in booked]
+        blocked = db.get_blocked_slot_times(date)
+
+        if "all" in blocked:
+            available = []
+        else:
+            available = [s for s in ALL_SLOTS if s not in booked and s not in blocked]
+
         morning = [s for s in available if int(s.split(":")[0]) < 14]
         evening = [s for s in available if int(s.split(":")[0]) >= 14]
         result = {
@@ -300,6 +422,83 @@ async def _execute_function(
     return json.dumps({"error": f"Unknown function: {fn_name}"}), None
 
 
+# ── Doctor function execution ─────────────────────────────────────────────────
+
+async def _execute_doctor_function(fn_name: str, fn_args: dict) -> str:
+    """Execute doctor-only functions. Returns result JSON string."""
+
+    if fn_name == "check_available_slots":
+        # Reuse patient logic (no phone needed here)
+        result_str, _ = await _execute_function(fn_name, fn_args, "")
+        return result_str
+
+    elif fn_name == "view_appointments":
+        date = fn_args.get("date", "")
+        appointments = db.get_appointments_for_date(date)
+        if not appointments:
+            return json.dumps({"date": date, "count": 0, "appointments": [],
+                               "message": "No confirmed appointments for this date."})
+        return json.dumps({
+            "date": date,
+            "count": len(appointments),
+            "appointments": appointments,
+        })
+
+    elif fn_name == "block_slots":
+        date = fn_args.get("date", "")
+        slot_times = fn_args.get("slot_times", [])
+        reason = fn_args.get("reason", "")
+        if not date or not slot_times:
+            return json.dumps({"success": False, "error": "date and slot_times are required"})
+        try:
+            count = db.block_slots(date, slot_times, reason)
+            label = "Entire day" if "all" in slot_times else f"{count} slot(s) ({', '.join(slot_times)})"
+            return json.dumps({
+                "success": True,
+                "date": date,
+                "blocked": slot_times,
+                "message": f"{label} blocked on {date}. Patients cannot book these slots.",
+            })
+        except Exception as exc:
+            logger.error("block_slots error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)})
+
+    elif fn_name == "unblock_slots":
+        date = fn_args.get("date", "")
+        slot_times = fn_args.get("slot_times", [])
+        if not date or not slot_times:
+            return json.dumps({"success": False, "error": "date and slot_times are required"})
+        try:
+            count = db.unblock_slots(date, slot_times)
+            label = "All blocks removed" if "all" in slot_times else f"{count} slot(s) unblocked"
+            return json.dumps({
+                "success": True,
+                "date": date,
+                "message": f"{label} on {date}. Slots are now available for booking.",
+            })
+        except Exception as exc:
+            logger.error("unblock_slots error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)})
+
+    elif fn_name == "view_blocked_slots":
+        date = fn_args.get("date", "")
+        rows = db.get_blocked_slots_detail(date)
+        if not rows:
+            return json.dumps({"date": date, "blocked": [],
+                               "message": "No slots are blocked on this date."})
+        # Check for all-day block (slot_time is None)
+        if any(r["slot_time"] is None for r in rows):
+            return json.dumps({"date": date, "blocked": ["all"],
+                               "message": f"Entire day is blocked on {date}."})
+        return json.dumps({
+            "date": date,
+            "blocked": [r["slot_time"] for r in rows],
+            "reasons": list({r.get("reason", "") for r in rows if r.get("reason")}),
+        })
+
+    return json.dumps({"error": f"Unknown doctor function: {fn_name}"})
+
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 def _build_system_prompt() -> str:
@@ -339,6 +538,102 @@ Guidelines:
 {cancel_reschedule_rules}"""
 
 
+def _build_doctor_prompt() -> str:
+    today = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
+    off_days = ", ".join(settings.WEEKLY_OFF_DAYS) if settings.WEEKLY_OFF_DAYS else "None"
+    return f"""You are a schedule assistant for {settings.DOCTOR_NAME} at {settings.CLINIC_NAME}.
+Today is {today}.
+
+You help the doctor manage their clinic schedule. Available actions:
+- Block slots so patients cannot book them (specific times or entire day)
+- Unblock previously blocked slots
+- View blocked slots for any date
+- View confirmed appointments for any date
+- Check available (free) slots for any date
+
+Clinic hours:
+  Morning : {settings.MORNING_START} – {settings.MORNING_END}
+  Evening : {settings.EVENING_START} – {settings.EVENING_END}
+  Slot gap: {settings.SLOT_DURATION_MIN} minutes
+  Weekly off: {off_days}
+
+Rules:
+- Be brief and direct — the doctor is busy.
+- Always confirm what was done with a clear summary (e.g., "Blocked 10:00–12:00 on 15 May ✓").
+- When the doctor says "block morning of 15 May", block all morning slots for that date.
+- "Block all day" or "not available today" → block_slots with slot_times=["all"].
+- When unblocking, confirm the slots are free again.
+- Use emojis sparingly for clarity (✅ ❌ 🚫)."""
+
+
+# ── Doctor mode detection ─────────────────────────────────────────────────────
+
+def _is_doctor(phone: str) -> bool:
+    """Return True if the sender's phone matches the registered DOCTOR_PHONE."""
+    if not settings.DOCTOR_PHONE:
+        return False
+    # Normalise by stripping leading zeros/plus
+    clean = lambda p: p.lstrip("+").lstrip("0")
+    return clean(phone) == clean(settings.DOCTOR_PHONE) or clean(phone).endswith(clean(settings.DOCTOR_PHONE))
+
+
+# ── Doctor reply flow ─────────────────────────────────────────────────────────
+
+async def _get_doctor_reply(phone: str, user_text: str) -> tuple[str, dict | None]:
+    """Handle messages from the doctor — schedule management mode."""
+    history = db.get_conversation_history(phone, limit=6)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": _build_doctor_prompt()},
+        *history,
+        {"role": "user", "content": user_text},
+    ]
+
+    response = await _client.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=messages,
+        tools=_TOOLS_DOCTOR,
+        tool_choice="auto",
+        max_tokens=400,
+        temperature=0.3,  # lower temp for precise schedule ops
+    )
+    choice = response.choices[0]
+
+    while choice.finish_reason == "tool_calls":
+        tool_calls = choice.message.tool_calls or []
+        messages.append(choice.message)
+
+        tool_results = []
+        for tc in tool_calls:
+            fn_name = tc.function.name
+            try:
+                fn_args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
+            logger.info("[DOCTOR] calling function: %s(%s)", fn_name, fn_args)
+            fn_result = await _execute_doctor_function(fn_name, fn_args)
+            tool_results.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": fn_result,
+            })
+
+        messages.extend(tool_results)
+        response = await _client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=messages,
+            tools=_TOOLS_DOCTOR,
+            tool_choice="auto",
+            max_tokens=400,
+            temperature=0.3,
+        )
+        choice = response.choices[0]
+
+    reply_text = choice.message.content or "Done."
+    db.save_message(phone, "user", user_text)
+    db.save_message(phone, "assistant", reply_text)
+    return reply_text, None
+
+
 # ── Main agent entry point ────────────────────────────────────────────────────
 
 async def get_agent_reply(phone: str, user_text: str) -> tuple[str, dict | None]:
@@ -346,6 +641,10 @@ async def get_agent_reply(phone: str, user_text: str) -> tuple[str, dict | None]
     Process a user message and return (reply_text, appointment_row_or_None).
     Saves the conversation to DB and returns the assistant's reply.
     """
+    # Route to doctor mode if sender is the registered doctor
+    if _is_doctor(phone):
+        return await _get_doctor_reply(phone, user_text)
+
     # 1. Load history
     history = db.get_conversation_history(phone, limit=8)
 

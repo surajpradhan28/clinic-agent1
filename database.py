@@ -152,6 +152,92 @@ def get_booked_slots(date: str) -> list[str]:
     return [row["slot_time"] for row in result.data] if result.data else []
 
 
+# ── Blocked Slots ──────────────────────────────────────────────────────────────
+
+def block_slots(date: str, slot_times: list[str], reason: str = "") -> int:
+    """
+    Block specific slots on a date so patients cannot book them.
+    Pass slot_times=["all"] to block the entire day.
+    Returns the number of slots blocked.
+    """
+    db_client = get_db()
+
+    if "all" in slot_times:
+        # Delete any existing per-slot blocks for this day and insert one "all day" row
+        db_client.table("blocked_slots").delete().eq("block_date", date).execute()
+        db_client.table("blocked_slots").insert(
+            {"block_date": date, "slot_time": None, "reason": reason}
+        ).execute()
+        return 1  # 1 "all day" block row
+
+    # For specific slots: upsert each one (ignore if already blocked)
+    rows = [{"block_date": date, "slot_time": s, "reason": reason} for s in slot_times]
+    db_client.table("blocked_slots").upsert(
+        rows, on_conflict="block_date,slot_time"
+    ).execute()
+    return len(slot_times)
+
+
+def unblock_slots(date: str, slot_times: list[str]) -> int:
+    """
+    Remove blocks for specific slots on a date.
+    Pass slot_times=["all"] to clear all blocks for that date.
+    Returns the number of block rows removed.
+    """
+    db_client = get_db()
+
+    if "all" in slot_times:
+        result = db_client.table("blocked_slots").delete().eq("block_date", date).execute()
+        return len(result.data) if result.data else 0
+
+    count = 0
+    for slot in slot_times:
+        result = (
+            db_client.table("blocked_slots")
+            .delete()
+            .eq("block_date", date)
+            .eq("slot_time", slot)
+            .execute()
+        )
+        count += len(result.data) if result.data else 0
+    return count
+
+
+def get_blocked_slot_times(date: str) -> list[str]:
+    """
+    Return list of blocked slot_time strings for a date.
+    Returns ["all"] if the entire day is blocked.
+    Returns [] if nothing is blocked.
+    """
+    db_client = get_db()
+    result = (
+        db_client.table("blocked_slots")
+        .select("slot_time")
+        .eq("block_date", date)
+        .execute()
+    )
+    if not result.data:
+        return []
+    times = [row["slot_time"] for row in result.data]
+    # If any row has slot_time=None it means whole day is blocked
+    if None in times:
+        return ["all"]
+    return times
+
+
+def get_blocked_slots_detail(date: str) -> list[dict]:
+    """Return full block rows for a date (for doctor view)."""
+    db_client = get_db()
+    result = (
+        db_client.table("blocked_slots")
+        .select("*")
+        .eq("block_date", date)
+        .order("slot_time", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
 def get_upcoming_appointment(phone: str) -> dict | None:
     """
     Return the next confirmed appointment for this patient (soonest future slot).
