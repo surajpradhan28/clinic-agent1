@@ -46,6 +46,18 @@ class Settings:
     # suite   : + daily doctor schedule WhatsApp
     PLAN_TIER: str = os.getenv("PLAN_TIER", "starter")  # starter | pro | suite
 
+    # ── Super-Admin ───────────────────────────────────────────────────────────
+    # WhatsApp number of the super-admin (you / service owner).
+    # Messages from this number to ANY clinic's WhatsApp are routed to admin.py.
+    # Format: country code + number, no '+' or spaces (e.g. "919999999999")
+    ADMIN_PHONE: str = os.getenv("ADMIN_PHONE", "")
+
+    # Secret key to access the web admin dashboard at /admin?key=<ADMIN_SECRET>
+    ADMIN_SECRET: str = os.getenv("ADMIN_SECRET", "change_me_in_production")
+
+    # Grace period (days) between subscription expiry and full suspension
+    GRACE_PERIOD_DAYS: int = int(os.getenv("GRACE_PERIOD_DAYS", "5"))
+
     # ── Doctor WhatsApp (Suite plan — daily schedule) ─────────────────────────
     DOCTOR_PHONE: str = os.getenv("DOCTOR_PHONE", "")   # e.g. "919876543210"
     DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "7"))  # 7 AM UTC

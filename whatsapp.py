@@ -1,12 +1,16 @@
 """
-whatsapp.py — Meta Cloud API helpers.
+whatsapp.py — Meta Cloud API helpers (multi-tenant v4).
+
+Key change from v3: send functions now accept an optional `phone_id` argument.
+When provided, messages are sent from that clinic's WhatsApp number.
+Falls back to settings.WHATSAPP_PHONE_ID if omitted (backwards compatible).
 
 Covers:
-  - Webhook signature verification
-  - Parsing incoming messages (text + interactive replies)
+  - Parsing incoming messages (text + interactive replies) + phone_number_id extraction
   - Sending text messages
   - Sending WhatsApp interactive LIST messages (for slot selection)
-  - Sending template messages (future-proofing)
+  - Sending interactive BUTTON messages
+  - Marking messages as read
 """
 
 from __future__ import annotations
@@ -29,7 +33,10 @@ def parse_incoming_message(body: dict) -> Optional[dict]:
     """
     Extract the first message from a Meta webhook payload.
 
-    Returns a dict with keys: phone, name, text, message_id, type
+    Returns a dict with keys: phone, name, text, message_id, type, phone_number_id
+      - phone_number_id: the clinic's Meta phone_number_id that received the message.
+                         Used to resolve which client (clinic) this message belongs to.
+
     Returns None if there is no user message (e.g. status update).
     """
     try:
@@ -45,12 +52,14 @@ def parse_incoming_message(body: dict) -> Optional[dict]:
         contacts = value.get("contacts", [{}])
         contact = contacts[0] if contacts else {}
 
-        phone = msg.get("from", "")
-        name = contact.get("profile", {}).get("name", "")
-        msg_id = msg.get("id", "")
+        # ← The clinic's Meta phone number ID (identifies WHICH clinic was messaged)
+        phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
+
+        phone    = msg.get("from", "")
+        name     = contact.get("profile", {}).get("name", "")
+        msg_id   = msg.get("id", "")
         msg_type = msg.get("type", "text")
 
-        # Resolve text from different message types
         if msg_type == "text":
             text = msg.get("text", {}).get("body", "").strip()
         elif msg_type == "interactive":
@@ -63,15 +72,15 @@ def parse_incoming_message(body: dict) -> Optional[dict]:
             else:
                 text = ""
         else:
-            # Unsupported type (image, audio, etc.) — treat as empty
             text = ""
 
         return {
-            "phone": phone,
-            "name": name,
-            "text": text,
-            "message_id": msg_id,
-            "type": msg_type,
+            "phone":           phone,
+            "name":            name,
+            "text":            text,
+            "message_id":      msg_id,
+            "type":            msg_type,
+            "phone_number_id": phone_number_id,   # ← NEW: clinic identifier
         }
     except Exception as exc:
         logger.error("Failed to parse incoming message: %s", exc)
@@ -80,8 +89,12 @@ def parse_incoming_message(body: dict) -> Optional[dict]:
 
 # ── Send text message ─────────────────────────────────────────────────────────
 
-async def send_text(phone: str, text: str) -> bool:
-    """Send a plain text WhatsApp message. Returns True on success."""
+async def send_text(phone: str, text: str, phone_id: str | None = None) -> bool:
+    """
+    Send a plain text WhatsApp message. Returns True on success.
+    phone_id: the sending clinic's Meta phone_number_id.
+              Defaults to settings.WHATSAPP_PHONE_ID if not provided.
+    """
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -89,7 +102,7 @@ async def send_text(phone: str, text: str) -> bool:
         "type": "text",
         "text": {"preview_url": False, "body": text},
     }
-    return await _post(payload)
+    return await _post(payload, phone_id=phone_id)
 
 
 # ── Send interactive LIST message ─────────────────────────────────────────────
@@ -101,25 +114,19 @@ async def send_slot_list(
     footer_text: str,
     morning_slots: list[str],
     evening_slots: list[str],
+    phone_id: str | None = None,
 ) -> bool:
-    """
-    Send a WhatsApp List message with morning + evening slot sections.
-    Each slot becomes a selectable list item.
-    """
     def _make_rows(slots: list[str]) -> list[dict]:
-        return [
-            {"id": slot, "title": slot, "description": ""}
-            for slot in slots
-        ]
+        return [{"id": slot, "title": slot, "description": ""} for slot in slots]
 
     sections = []
     if morning_slots:
-        sections.append({"title": "🌅 Morning", "rows": _make_rows(morning_slots)})
+        sections.append({"title": "Morning", "rows": _make_rows(morning_slots)})
     if evening_slots:
-        sections.append({"title": "🌆 Evening", "rows": _make_rows(evening_slots)})
+        sections.append({"title": "Evening", "rows": _make_rows(evening_slots)})
 
     if not sections:
-        await send_text(phone, "Sorry, no slots available for that date. Please try another day.")
+        await send_text(phone, "Sorry, no slots available for that date. Please try another day.", phone_id=phone_id)
         return False
 
     payload = {
@@ -138,7 +145,7 @@ async def send_slot_list(
             },
         },
     }
-    return await _post(payload)
+    return await _post(payload, phone_id=phone_id)
 
 
 # ── Send interactive BUTTON message ──────────────────────────────────────────
@@ -146,11 +153,11 @@ async def send_slot_list(
 async def send_buttons(
     phone: str,
     body_text: str,
-    buttons: list[dict],  # [{"id": "...", "title": "..."}]
+    buttons: list[dict],
     header_text: str = "",
     footer_text: str = "",
+    phone_id: str | None = None,
 ) -> bool:
-    """Send up to 3 quick-reply buttons."""
     interactive: dict[str, Any] = {
         "type": "button",
         "body": {"text": body_text},
@@ -173,25 +180,29 @@ async def send_buttons(
         "type": "interactive",
         "interactive": interactive,
     }
-    return await _post(payload)
+    return await _post(payload, phone_id=phone_id)
 
 
 # ── Mark message as read ──────────────────────────────────────────────────────
 
-async def mark_as_read(message_id: str) -> None:
-    """Send read receipt for a message."""
+async def mark_as_read(message_id: str, phone_id: str | None = None) -> None:
     payload = {
         "messaging_product": "whatsapp",
         "status": "read",
         "message_id": message_id,
     }
-    await _post(payload)
+    await _post(payload, phone_id=phone_id)
 
 
 # ── Internal HTTP helper ──────────────────────────────────────────────────────
 
-async def _post(payload: dict) -> bool:
-    url = f"{BASE_URL}/{settings.WHATSAPP_PHONE_ID}/messages"
+async def _post(payload: dict, phone_id: str | None = None) -> bool:
+    """
+    POST to the Meta Graph API.
+    Uses phone_id to construct the URL (which clinic's number is sending).
+    """
+    pid = phone_id or settings.WHATSAPP_PHONE_ID
+    url = f"{BASE_URL}/{pid}/messages"
     headers = {
         "Authorization": f"Bearer {settings.WHATSAPP_TOKEN}",
         "Content-Type": "application/json",
@@ -200,9 +211,7 @@ async def _post(payload: dict) -> bool:
         try:
             response = await client.post(url, json=payload, headers=headers)
             if response.status_code not in (200, 201):
-                logger.error(
-                    "WhatsApp API error %s: %s", response.status_code, response.text
-                )
+                logger.error("WhatsApp API error %s: %s", response.status_code, response.text)
                 return False
             return True
         except httpx.HTTPError as exc:
