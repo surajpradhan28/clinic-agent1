@@ -4,11 +4,12 @@ main.py — FastAPI application + WhatsApp webhook handler (multi-tenant v5).
 Entry point for the Clinic AI Agent.
 
 Endpoints:
-  GET  /                     → Health check
-  GET  /webhook              → Meta webhook verification (one-time setup)
-  POST /webhook              → Incoming WhatsApp messages
-  GET  /health               → Detailed health check (DB + config)
-  GET  /admin?key=<SECRET>   → Web admin dashboard
+  GET  /                          → Health check
+  GET  /webhook                   → Meta webhook verification (one-time setup)
+  POST /webhook                   → Incoming WhatsApp messages
+  GET  /health                    → Detailed health check (DB + config)
+  GET  /admin?key=<SECRET>        → Web admin dashboard
+  POST /admin/action?key=<SECRET> → Dashboard actions (suspend/activate/payment/new_client)
 
 Routing on every incoming message:
   0. If sender is ADMIN_PHONE → super-admin command handler (admin.py)
@@ -98,6 +99,75 @@ async def admin_dashboard(request: Request):
     except Exception as exc:
         logger.error("[Admin] Dashboard render error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Dashboard error")
+
+
+@app.post("/admin/action")
+async def admin_action(request: Request):
+    """
+    Dashboard action endpoint — called by JS fetch() in the admin HTML.
+    Actions: suspend | activate | payment | new_client
+    """
+    key = request.query_params.get("key", "")
+    if not key or key != settings.ADMIN_SECRET:
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=403)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+
+    action = body.get("action", "")
+    logger.info("[Admin Action] %s — %s", action, {k: v for k, v in body.items() if k != "action"})
+
+    try:
+        if action == "suspend":
+            cid = int(body["client_id"])
+            db.update_client_status(cid, "suspended")
+            return JSONResponse({"ok": True})
+
+        elif action == "activate":
+            cid = int(body["client_id"])
+            db.update_client_status(cid, "active")
+            return JSONResponse({"ok": True})
+
+        elif action == "payment":
+            cid    = int(body["client_id"])
+            amount = float(body["amount"])
+            method = body.get("method", "UPI")
+            notes  = body.get("notes", "")
+            db.record_payment(cid, amount, method, notes)
+            return JSONResponse({"ok": True})
+
+        elif action == "new_client":
+            from datetime import date as _date, timedelta as _td
+            new = db.create_clinic_client(
+                name=body["name"],
+                doctor_name=body["doctor_name"],
+                contact_phone=body.get("contact_phone", ""),
+                whatsapp_phone_id=body["whatsapp_phone_id"],
+                plan=body.get("plan", "starter"),
+            )
+            days      = int(body.get("subscription_days", 30))
+            sub_start = _date.today().isoformat()
+            sub_end   = (_date.today() + _td(days=days)).isoformat()
+            db.create_subscription(
+                new["id"],
+                body.get("plan", "starter"),
+                0.0,
+                sub_start,
+                sub_end,
+            )
+            logger.info("[Admin Action] New client created: id=%s name=%s", new["id"], body.get("name"))
+            return JSONResponse({"ok": True, "client_id": new["id"]})
+
+        else:
+            return JSONResponse({"ok": False, "error": f"Unknown action: {action}"}, status_code=400)
+
+    except KeyError as exc:
+        return JSONResponse({"ok": False, "error": f"Missing field: {exc}"}, status_code=400)
+    except Exception as exc:
+        logger.error("[Admin Action] Error: %s", exc, exc_info=True)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 @app.get("/health")

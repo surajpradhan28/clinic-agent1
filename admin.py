@@ -315,10 +315,9 @@ async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
         new_id = new_client["id"]
 
         # Create a 30-day starter subscription
-        from datetime import datetime as _dt
         sub_start = date.today().isoformat()
         sub_end   = (date.today() + timedelta(days=30)).isoformat()
-        db.create_subscription(new_id, sub_start, sub_end)
+        db.create_subscription(new_id, plan, 0.0, sub_start, sub_end)
 
         await whatsapp.send_text(
             phone,
@@ -356,162 +355,670 @@ def _parse_int(cmd: str, prefix: str) -> Optional[int]:
 
 def render_dashboard() -> str:
     """
-    Return a self-contained HTML admin dashboard.
+    Return a self-contained HTML admin dashboard with full feature set.
     Called by the FastAPI /admin endpoint.
     Pulls live data from DB at render time.
     """
+    import json as _json
+
+    db_conn     = db.get_db()
+    today       = date.today()
+    month_start = today.replace(day=1).isoformat()
+    month_label = today.strftime("%B %Y")
+    admin_key   = settings.ADMIN_SECRET or ""
+
+    # ── Fetch all data ────────────────────────────────────────────────────────
     clients = db.list_all_clients()
-    month_start = date.today().replace(day=1).isoformat()
-    db_conn = db.get_db()
 
     # Usage this month
-    usage_rows = db_conn.table("usage_log").select("*").eq("month", month_start)\
-        .execute().data or []
+    usage_rows = (
+        db_conn.table("usage_log").select("*")
+        .eq("month", month_start).execute().data or []
+    )
     usage_map = {r["client_id"]: r for r in usage_rows}
 
-    # Last 3 payments per client
-    all_pays = db_conn.table("payments").select("*")\
-        .order("paid_at", desc=True).limit(50).execute().data or []
+    # Usage history — last 4 months
+    hist_start = (today.replace(day=1) - timedelta(days=93)).replace(day=1).isoformat()
+    hist_rows = (
+        db_conn.table("usage_log").select("*, clients(name)")
+        .gte("month", hist_start).order("month", desc=True).execute().data or []
+    )
 
-    # Build client rows
+    # All payments (recent first)
+    all_pays = (
+        db_conn.table("payments").select("*, clients(name)")
+        .order("payment_date", desc=True).limit(200).execute().data or []
+    )
+    client_pays: dict = {}
+    for p in all_pays:
+        client_pays.setdefault(p["client_id"], []).append(p)
+
+    # Latest subscription per client
+    all_subs = (
+        db_conn.table("subscriptions").select("*")
+        .order("end_date", desc=True).execute().data or []
+    )
+    subs_map: dict = {}
+    for s in all_subs:
+        if s["client_id"] not in subs_map:
+            subs_map[s["client_id"]] = s
+
+    # Patient counts
+    pat_rows = db_conn.table("patients").select("client_id").execute().data or []
+    pat_counts: dict = {}
+    for p in pat_rows:
+        pat_counts[p["client_id"]] = pat_counts.get(p["client_id"], 0) + 1
+
+    # Revenue
+    this_month_pfx = month_start[:7]
+    rev_by_client: dict = {}
+    rev_this_month = 0.0
+    rev_all_time   = 0.0
+    for p in all_pays:
+        cid = p["client_id"]
+        amt = float(p.get("amount") or 0)
+        rev_by_client[cid] = rev_by_client.get(cid, 0.0) + amt
+        rev_all_time += amt
+        if str(p.get("payment_date") or "")[:7] == this_month_pfx:
+            rev_this_month += amt
+
+    # Clinic settings (doctor name, address, etc.)
+    all_cfg = db_conn.table("clinic_settings").select("*").execute().data or []
+    cfg_by_client: dict = {}
+    for row in all_cfg:
+        cfg_by_client.setdefault(row["client_id"], {})[row["key"]] = row["value"]
+
+    # ── Aggregate stats ───────────────────────────────────────────────────────
+    total_clients   = len(clients)
+    active_count    = sum(1 for c in clients if c.get("status") == "active")
+    trial_count     = sum(1 for c in clients if c.get("status") == "trial")
+    grace_count     = sum(1 for c in clients if c.get("status") == "grace")
+    suspended_count = sum(1 for c in clients if c.get("status") in ("suspended", "expired"))
+    total_bookings  = sum(r.get("bookings", 0) for r in usage_rows)
+    total_patients  = sum(pat_counts.values())
+
+    # ── Build client table rows ───────────────────────────────────────────────
     rows_html = ""
     for c in clients:
-        cid   = c["id"]
-        stat  = c.get("status", "unknown")
-        plan  = c.get("plan", "?")
-        grace = _fmt_date(c.get("grace_until"))
-        end   = _fmt_date(c.get("end_date") or c.get("subscription_end"))
-        u     = usage_map.get(cid, {})
-        pays  = [p for p in all_pays if p["client_id"] == cid][:3]
-        pay_html = "".join(
-            f"<div class='pay'>₹{p.get('amount','?')} · {p.get('method','?')} · "
-            f"{_fmt_date(p.get('paid_at'))}</div>"
-            for p in pays
-        ) or "<div class='pay muted'>None</div>"
+        cid      = c["id"]
+        stat     = c.get("status", "unknown")
+        plan     = c.get("plan", "?")
+        cfg      = cfg_by_client.get(cid, {})
+        doctor   = cfg.get("doctor_name") or c.get("doctor_name") or "—"
+        sub      = subs_map.get(cid, {})
+        grace    = _fmt_date(c.get("grace_until"))
+        u        = usage_map.get(cid, {})
+        rev      = rev_by_client.get(cid, 0.0)
+        pats     = pat_counts.get(cid, 0)
+        pays     = client_pays.get(cid, [])[:3]
+        cname    = c.get("name", "?")
+        cname_js = cname.replace("'", "\\'")
 
-        stat_class = {
-            "active": "badge-green", "grace": "badge-yellow",
-            "expired": "badge-red", "suspended": "badge-red",
+        pay_html = "".join(
+            "<div class='pay-item'>₹{:.0f} &middot; {} &middot; {}</div>".format(
+                float(p.get("amount") or 0), p.get("method", "?"), _fmt_date(p.get("payment_date"))
+            )
+            for p in pays
+        ) or "<span class='muted'>None</span>"
+
+        stat_cls = {
+            "active": "badge-green", "trial": "badge-blue",
+            "grace": "badge-yellow", "expired": "badge-red",
+            "suspended": "badge-red",
         }.get(stat, "badge-grey")
 
-        grace_cell = f"<br><small class='muted'>Grace: {grace}</small>" if grace and stat == "grace" else ""
+        grace_html = (
+            "<br><small class='muted'>Grace: {}</small>".format(grace)
+            if grace and stat == "grace" else ""
+        )
 
-        rows_html += f"""
-        <tr>
-          <td><b>{cid}</b></td>
-          <td>
-            {c.get('name','—')}<br>
-            <small class='muted'>{c.get('contact_phone','—')}</small>
-          </td>
-          <td><span class='badge {stat_class}'>{stat}</span>{grace_cell}</td>
-          <td>{plan}</td>
-          <td>{end}</td>
-          <td>
-            <b>{u.get('bookings',0)}</b> bk &nbsp;
-            {u.get('cancels',0)} cx &nbsp;
-            {u.get('followups',0)} fu &nbsp;
-            {u.get('reviews',0)} rv
-          </td>
-          <td class='pays'>{pay_html}</td>
-        </tr>"""
+        sub_start_str = _fmt_date(sub.get("start_date"))
+        sub_end_str   = _fmt_date(sub.get("end_date"))
 
-    total_clients  = len(clients)
-    active_clients = sum(1 for c in clients if c.get("status") == "active")
-    grace_clients  = sum(1 for c in clients if c.get("status") == "grace")
-    total_bookings = sum(r.get("bookings", 0) for r in usage_rows)
-    month_label    = date.today().strftime("%B %Y")
+        can_activate = stat in ("suspended", "expired")
+        if can_activate:
+            action_btn = (
+                "<button class='btn btn-ok' "
+                "onclick=\"doAction({cid},'activate','{nm}')\">&#10003; Activate</button>"
+                .format(cid=cid, nm=cname_js)
+            )
+        else:
+            action_btn = (
+                "<button class='btn btn-warn' "
+                "onclick=\"doAction({cid},'suspend','{nm}')\">&#9940; Suspend</button>"
+                .format(cid=cid, nm=cname_js)
+            )
 
-    return f"""<!DOCTYPE html>
+        pay_btn = (
+            "<button class='btn btn-primary' "
+            "onclick=\"openPayModal({cid},'{nm}')\">&#128176; Payment</button>"
+            .format(cid=cid, nm=cname_js)
+        )
+
+        rows_html += (
+            "<tr>"
+            "<td style='font-weight:700;color:#075E54'>{cid}</td>"
+            "<td><b>{name}</b><br><small class='muted'>{phone}</small></td>"
+            "<td><small>{doctor}</small></td>"
+            "<td><span class='badge {stat_cls}'>{stat}</span>{grace_html}</td>"
+            "<td><span class='plan-badge'>{plan}</span></td>"
+            "<td style='font-size:0.78rem'>{sub_s}<br><span class='muted'>&rarr;</span> {sub_e}</td>"
+            "<td class='num-cell'>{pats}</td>"
+            "<td style='font-size:0.8rem'><b>{bk}</b> bk &nbsp;"
+            "<span class='muted'>{cx} cx &nbsp;{fu} fu &nbsp;{rv} rv</span></td>"
+            "<td class='num-cell' style='color:#075E54;font-weight:600'>&#8377;{rev:.0f}</td>"
+            "<td class='pays'>{pay_html}</td>"
+            "<td class='actions-cell'>{action_btn}{pay_btn}</td>"
+            "</tr>"
+        ).format(
+            cid=cid, name=cname, phone=c.get("contact_phone", "—"), doctor=doctor,
+            stat_cls=stat_cls, stat=stat, grace_html=grace_html, plan=plan,
+            sub_s=sub_start_str, sub_e=sub_end_str, pats=pats,
+            bk=u.get("bookings", 0), cx=u.get("cancels", 0),
+            fu=u.get("followups", 0), rv=u.get("reviews", 0),
+            rev=rev, pay_html=pay_html, action_btn=action_btn, pay_btn=pay_btn,
+        )
+
+    if not rows_html:
+        rows_html = "<tr><td colspan='11' class='muted' style='text-align:center;padding:24px'>No clients yet — use the New Client button above.</td></tr>"
+
+    # ── Build payment history rows ────────────────────────────────────────────
+    pays_hist_html = ""
+    for p in all_pays[:50]:
+        clinic = (p.get("clients") or {}).get("name", "Client {}".format(p["client_id"]))
+        pays_hist_html += (
+            "<tr>"
+            "<td>{}</td><td>{}</td>"
+            "<td class='num-cell' style='color:#075E54;font-weight:600'>&#8377;{:.0f}</td>"
+            "<td>{}</td><td class='muted' style='font-size:0.78rem'>{}</td>"
+            "</tr>"
+        ).format(
+            _fmt_date(p.get("payment_date")), clinic,
+            float(p.get("amount") or 0),
+            p.get("method", "—"), p.get("notes") or "—",
+        )
+    if not pays_hist_html:
+        pays_hist_html = "<tr><td colspan='5' class='muted' style='text-align:center;padding:24px'>No payments recorded yet.</td></tr>"
+
+    # ── Build usage history rows ──────────────────────────────────────────────
+    usage_hist_html = ""
+    for r in hist_rows:
+        clinic = (r.get("clients") or {}).get("name", "Client {}".format(r["client_id"]))
+        try:
+            ml = date.fromisoformat(str(r["month"])[:10]).strftime("%b %Y")
+        except Exception:
+            ml = str(r.get("month", ""))[:7]
+        usage_hist_html += (
+            "<tr>"
+            "<td>{}</td><td>{}</td>"
+            "<td class='num-cell'>{}</td><td class='num-cell'>{}</td>"
+            "<td class='num-cell'>{}</td><td class='num-cell'>{}</td>"
+            "<td class='num-cell'>{}</td>"
+            "</tr>"
+        ).format(
+            ml, clinic,
+            r.get("bookings", 0), r.get("cancels", 0),
+            r.get("reschedules", 0), r.get("followups", 0), r.get("reviews", 0),
+        )
+    if not usage_hist_html:
+        usage_hist_html = "<tr><td colspan='7' class='muted' style='text-align:center;padding:24px'>No usage history yet.</td></tr>"
+
+    # Client <option> list for payment modal
+    client_opts = "\n".join(
+        "<option value='{}'>{} (ID: {})</option>".format(c["id"], c.get("name", "?"), c["id"])
+        for c in clients
+    )
+
+    # Safely embed admin key in JS
+    ak = _json.dumps(admin_key)
+
+    # ── Return HTML ───────────────────────────────────────────────────────────
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Clinic AI Admin</title>
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         background: #f0f2f5; color: #1a1a1a; }}
-  header {{ background: #075E54; color: #fff; padding: 18px 32px;
-            display: flex; align-items: center; gap: 12px; }}
-  header h1 {{ font-size: 1.3rem; font-weight: 600; }}
-  header small {{ font-size: 0.8rem; opacity: 0.75; }}
-  .container {{ max-width: 1200px; margin: 0 auto; padding: 24px 16px; }}
-  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px; margin-bottom: 28px; }}
-  .stat {{ background: #fff; border-radius: 10px; padding: 18px 22px;
-           box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
-  .stat .num {{ font-size: 2rem; font-weight: 700; color: #075E54; }}
-  .stat .lbl {{ font-size: 0.82rem; color: #666; margin-top: 4px; }}
-  .card {{ background: #fff; border-radius: 10px;
-           box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }}
-  .card-header {{ padding: 16px 22px; border-bottom: 1px solid #eee;
-                  font-weight: 600; font-size: 1rem; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 0.875rem; }}
-  th {{ background: #f7f7f7; padding: 10px 14px; text-align: left;
-        font-weight: 600; color: #555; font-size: 0.8rem;
-        text-transform: uppercase; letter-spacing: .03em; }}
-  td {{ padding: 12px 14px; border-top: 1px solid #f0f0f0; vertical-align: top; }}
-  tr:hover td {{ background: #fafafa; }}
-  .badge {{ display: inline-block; padding: 2px 9px; border-radius: 20px;
-            font-size: 0.75rem; font-weight: 600; }}
-  .badge-green  {{ background: #d4edda; color: #155724; }}
-  .badge-yellow {{ background: #fff3cd; color: #856404; }}
-  .badge-red    {{ background: #f8d7da; color: #721c24; }}
-  .badge-grey   {{ background: #e2e3e5; color: #383d41; }}
-  .pay {{ font-size: 0.78rem; color: #444; padding: 1px 0; }}
-  .muted {{ color: #999; }}
-  .pays {{ min-width: 180px; }}
-  footer {{ text-align: center; padding: 24px; font-size: 0.78rem; color: #aaa; }}
-  @media (max-width: 768px) {{
-    table, thead, tbody, th, td, tr {{ display: block; }}
-    thead {{ display: none; }}
-    td {{ padding: 6px 12px; }}
-    td:first-child {{ font-weight: bold; padding-top: 12px; }}
-  }}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#f0f2f5;color:#1a1a1a;min-height:100vh}
+
+/* Header */
+header{background:linear-gradient(135deg,#075E54,#128C7E);color:#fff;
+       padding:16px 32px;display:flex;align-items:center;justify-content:space-between;
+       box-shadow:0 2px 8px rgba(0,0,0,.15);flex-wrap:wrap;gap:12px}
+header h1{font-size:1.25rem;font-weight:700;letter-spacing:-.01em}
+header small{font-size:0.78rem;opacity:.8;display:block;margin-top:2px}
+.header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* Container */
+.container{max-width:1450px;margin:0 auto;padding:24px 16px}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+       gap:14px;margin-bottom:28px}
+.stat{background:#fff;border-radius:12px;padding:16px 18px;
+      box-shadow:0 1px 4px rgba(0,0,0,.07);border-top:3px solid #e0e0e0}
+.stat.s-teal{border-color:#075E54}
+.stat.s-green{border-color:#28a745}
+.stat.s-blue{border-color:#007bff}
+.stat.s-yellow{border-color:#ffc107}
+.stat.s-red{border-color:#dc3545}
+.stat.s-purple{border-color:#6f42c1}
+.stat .num{font-size:1.8rem;font-weight:800;line-height:1;color:#1a1a1a}
+.stat .lbl{font-size:0.72rem;color:#888;margin-top:5px;font-weight:500;
+           text-transform:uppercase;letter-spacing:.04em}
+
+/* Section */
+.section{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);
+         overflow:hidden;margin-bottom:28px}
+.section-header{padding:14px 20px;border-bottom:1px solid #f0f0f0;
+                display:flex;align-items:center;justify-content:space-between;
+                flex-wrap:wrap;gap:8px}
+.section-header h2{font-size:0.95rem;font-weight:700;color:#1a1a1a}
+.section-header small{color:#999;font-size:0.78rem}
+
+/* Table */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:0.84rem}
+th{background:#fafafa;padding:9px 13px;text-align:left;font-weight:600;color:#666;
+   font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;
+   border-bottom:2px solid #eee;white-space:nowrap}
+td{padding:11px 13px;border-top:1px solid #f5f5f5;vertical-align:top}
+tr:hover td{background:#fafcfc}
+.num-cell{text-align:right;white-space:nowrap}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;
+       font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.badge-green{background:#d4edda;color:#155724}
+.badge-blue{background:#cce5ff;color:#004085}
+.badge-yellow{background:#fff3cd;color:#856404}
+.badge-red{background:#f8d7da;color:#721c24}
+.badge-grey{background:#e9ecef;color:#495057}
+.plan-badge{display:inline-block;padding:2px 8px;border-radius:6px;
+            font-size:0.7rem;font-weight:600;background:#e8f5e9;color:#1b5e20;
+            text-transform:capitalize}
+
+/* Pay items */
+.pay-item{font-size:0.76rem;color:#555;padding:1px 0;white-space:nowrap}
+.pays{min-width:155px}
+.muted{color:#bbb}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;
+     padding:5px 11px;border-radius:7px;border:none;cursor:pointer;
+     font-size:0.76rem;font-weight:600;transition:opacity .15s;white-space:nowrap;
+     font-family:inherit}
+.btn:hover{opacity:.82}
+.btn-primary{background:#075E54;color:#fff}
+.btn-ok{background:#28a745;color:#fff}
+.btn-warn{background:#dc3545;color:#fff}
+.btn-light{background:#f0f2f5;color:#333;border:1px solid #ddd}
+.btn-new{background:#128C7E;color:#fff;padding:8px 18px;font-size:0.86rem}
+.actions-cell{min-width:180px;display:flex;flex-direction:column;gap:5px;padding:8px 13px}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+               z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:16px;padding:28px 30px;
+       width:92%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.2);
+       max-height:90vh;overflow-y:auto}
+.modal h3{font-size:1.05rem;font-weight:700;margin-bottom:16px;color:#075E54}
+.form-group{margin-bottom:13px}
+.form-group label{display:block;font-size:0.75rem;font-weight:600;color:#555;
+                  margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+.form-group input,.form-group select{
+  width:100%;padding:8px 11px;border:1px solid #ddd;border-radius:8px;
+  font-size:0.87rem;outline:none;transition:border-color .15s;font-family:inherit}
+.form-group input:focus,.form-group select:focus{border-color:#075E54}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.err-msg{color:#dc3545;font-size:0.78rem;margin-top:6px;display:none}
+.ok-msg{color:#28a745;font-size:0.78rem;margin-top:6px;display:none}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;color:#fff;padding:11px 18px;
+       border-radius:8px;font-size:0.84rem;z-index:2000;
+       transform:translateY(80px);transition:transform .3s;pointer-events:none}
+#toast.show{transform:translateY(0)}
+
+footer{text-align:center;padding:22px;font-size:0.76rem;color:#ccc;margin-top:4px}
 </style>
 </head>
 <body>
+
 <header>
   <div>
-    <h1>🏥 Clinic AI — Admin Dashboard</h1>
-    <small>Last refreshed: {date.today().strftime("%d %b %Y")} &nbsp;·&nbsp; {month_label}</small>
+    <h1>&#127973; Clinic AI &mdash; Admin Dashboard</h1>
+    <small>Last refreshed: """ + today.strftime("%d %b %Y, %H:%M") + """ &nbsp;&middot;&nbsp; """ + month_label + """</small>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-light" onclick="location.reload()">&#8635; Refresh</button>
+    <button class="btn btn-new" onclick="openNewClientModal()">+ New Client</button>
   </div>
 </header>
+
 <div class="container">
+
+  <!-- Stats -->
   <div class="stats">
-    <div class="stat">
-      <div class="num">{total_clients}</div>
+    <div class="stat s-teal">
+      <div class="num">""" + str(total_clients) + """</div>
       <div class="lbl">Total Clients</div>
     </div>
-    <div class="stat">
-      <div class="num" style="color:#28a745">{active_clients}</div>
+    <div class="stat s-green">
+      <div class="num" style="color:#28a745">""" + str(active_count) + """</div>
       <div class="lbl">Active</div>
     </div>
-    <div class="stat">
-      <div class="num" style="color:#ffc107">{grace_clients}</div>
-      <div class="lbl">In Grace Period</div>
+    <div class="stat s-blue">
+      <div class="num" style="color:#007bff">""" + str(trial_count) + """</div>
+      <div class="lbl">Trial</div>
     </div>
-    <div class="stat">
-      <div class="num">{total_bookings}</div>
+    <div class="stat s-yellow">
+      <div class="num" style="color:#e6a817">""" + str(grace_count) + """</div>
+      <div class="lbl">Grace Period</div>
+    </div>
+    <div class="stat s-red">
+      <div class="num" style="color:#dc3545">""" + str(suspended_count) + """</div>
+      <div class="lbl">Suspended / Expired</div>
+    </div>
+    <div class="stat s-teal">
+      <div class="num">""" + str(total_patients) + """</div>
+      <div class="lbl">Total Patients</div>
+    </div>
+    <div class="stat s-teal">
+      <div class="num">""" + str(total_bookings) + """</div>
       <div class="lbl">Bookings This Month</div>
+    </div>
+    <div class="stat s-green">
+      <div class="num" style="color:#075E54">&#8377;""" + "{:.0f}".format(rev_this_month) + """</div>
+      <div class="lbl">Revenue This Month</div>
+    </div>
+    <div class="stat s-purple">
+      <div class="num" style="color:#6f42c1">&#8377;""" + "{:.0f}".format(rev_all_time) + """</div>
+      <div class="lbl">Revenue All Time</div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-header">All Clients</div>
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th><th>Clinic</th><th>Status</th><th>Plan</th>
-          <th>Expires</th><th>Usage ({month_label})</th><th>Payments</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows_html}
-      </tbody>
-    </table>
+  <!-- Clients Table -->
+  <div class="section">
+    <div class="section-header">
+      <h2>All Clients</h2>
+      <small>""" + str(total_clients) + """ client(s) &nbsp;&middot;&nbsp; Usage: """ + month_label + """</small>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Clinic</th>
+            <th>Doctor</th>
+            <th>Status</th>
+            <th>Plan</th>
+            <th>Subscription</th>
+            <th>Patients</th>
+            <th>Usage (""" + month_label + """)</th>
+            <th>Revenue</th>
+            <th>Recent Payments</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          """ + rows_html + """
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Payment History -->
+  <div class="section">
+    <div class="section-header">
+      <h2>&#128179; Payment History</h2>
+      <small>Last 50 payments across all clients</small>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Clinic</th>
+            <th>Amount</th>
+            <th>Method</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          """ + pays_hist_html + """
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Usage History -->
+  <div class="section">
+    <div class="section-header">
+      <h2>&#128202; Usage History</h2>
+      <small>Last 4 months</small>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Clinic</th>
+            <th>Bookings</th>
+            <th>Cancels</th>
+            <th>Reschedules</th>
+            <th>Followups</th>
+            <th>Reviews</th>
+          </tr>
+        </thead>
+        <tbody>
+          """ + usage_hist_html + """
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<footer>Clinic AI Admin &nbsp;&middot;&nbsp; Arun Patel &nbsp;&middot;&nbsp; """ + str(today.year) + """</footer>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Record Payment Modal -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal">
+    <h3>&#128176; Record Payment</h3>
+    <div class="form-group">
+      <label>Client</label>
+      <select id="pay-client">""" + client_opts + """</select>
+    </div>
+    <div class="form-group">
+      <label>Amount (&#8377;)</label>
+      <input type="number" id="pay-amount" placeholder="e.g. 3000" min="1" step="1">
+    </div>
+    <div class="form-group">
+      <label>Method</label>
+      <select id="pay-method">
+        <option value="UPI">UPI</option>
+        <option value="Cash">Cash</option>
+        <option value="Bank Transfer">Bank Transfer</option>
+        <option value="Card">Card</option>
+        <option value="Cheque">Cheque</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <input type="text" id="pay-notes" placeholder="e.g. May renewal">
+    </div>
+    <div class="err-msg" id="pay-err"></div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal('payModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPayment()">Record Payment</button>
+    </div>
   </div>
 </div>
-<footer>Clinic AI Admin · Arun Patel · {date.today().year}</footer>
+
+<!-- New Client Modal -->
+<div class="modal-overlay" id="newClientModal">
+  <div class="modal">
+    <h3>&#127973; New Client</h3>
+    <div class="form-group">
+      <label>Clinic Name</label>
+      <input type="text" id="nc-name" placeholder="e.g. City Clinic">
+    </div>
+    <div class="form-group">
+      <label>Doctor Name</label>
+      <input type="text" id="nc-doctor" placeholder="e.g. Dr. Patel">
+    </div>
+    <div class="form-group">
+      <label>Contact Phone (with country code)</label>
+      <input type="text" id="nc-phone" placeholder="e.g. 919876543210">
+    </div>
+    <div class="form-group">
+      <label>WhatsApp Phone Number ID (Meta)</label>
+      <input type="text" id="nc-waid" placeholder="from Meta Developer Console">
+    </div>
+    <div class="form-group">
+      <label>Plan</label>
+      <select id="nc-plan">
+        <option value="starter">Starter</option>
+        <option value="pro">Pro</option>
+        <option value="suite">Suite</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Subscription Days</label>
+      <input type="number" id="nc-days" value="30" min="1" max="365">
+    </div>
+    <div class="err-msg" id="nc-err"></div>
+    <div class="ok-msg"  id="nc-ok"></div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal('newClientModal')">Cancel</button>
+      <button class="btn btn-new"   onclick="submitNewClient()">Create Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <h3 id="conf-title">Confirm</h3>
+    <p id="conf-msg" style="margin-bottom:18px;color:#555;font-size:0.9rem"></p>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-warn"  id="conf-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ADMIN_KEY = """ + ak + """;
+
+function showToast(msg, ok) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = ok !== false ? '#28a745' : '#dc3545';
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
+function openModal(id)  { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// Close on overlay click
+document.querySelectorAll('.modal-overlay').forEach(function(el){
+  el.addEventListener('click', function(e){ if(e.target===el) el.classList.remove('active'); });
+});
+
+async function api(payload) {
+  var r = await fetch('/admin/action?key=' + encodeURIComponent(ADMIN_KEY), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  return r.json();
+}
+
+// Suspend / Activate
+function doAction(clientId, action, clientName) {
+  var isSupend = action === 'suspend';
+  document.getElementById('conf-title').textContent = isSupend ? 'Suspend Client' : 'Activate Client';
+  document.getElementById('conf-msg').textContent   = isSupend
+    ? 'Suspend "' + clientName + '"? Service will stop immediately.'
+    : 'Activate "' + clientName + '"? Service will resume immediately.';
+  var btn = document.getElementById('conf-btn');
+  btn.textContent = isSupend ? 'Yes, Suspend' : 'Yes, Activate';
+  btn.className   = 'btn ' + (isSupend ? 'btn-warn' : 'btn-ok');
+  btn.onclick = async function() {
+    closeModal('confirmModal');
+    var res = await api({action: action, client_id: clientId});
+    if (res.ok) { showToast('Client ' + clientId + ' ' + action + 'd', true); setTimeout(function(){ location.reload(); }, 1200); }
+    else        { showToast('Error: ' + (res.error || 'Unknown'), false); }
+  };
+  openModal('confirmModal');
+}
+
+// Payment Modal
+function openPayModal(clientId, clientName) {
+  var sel = document.getElementById('pay-client');
+  for (var i=0; i<sel.options.length; i++) {
+    if (parseInt(sel.options[i].value) === clientId) { sel.selectedIndex = i; break; }
+  }
+  document.getElementById('pay-amount').value = '';
+  document.getElementById('pay-notes').value  = '';
+  document.getElementById('pay-err').style.display = 'none';
+  openModal('payModal');
+}
+async function submitPayment() {
+  var cid    = parseInt(document.getElementById('pay-client').value);
+  var amount = parseFloat(document.getElementById('pay-amount').value);
+  var method = document.getElementById('pay-method').value;
+  var notes  = document.getElementById('pay-notes').value;
+  var err    = document.getElementById('pay-err');
+  if (!amount || amount <= 0) { err.textContent = 'Enter a valid amount.'; err.style.display='block'; return; }
+  err.style.display = 'none';
+  var res = await api({action:'payment', client_id:cid, amount:amount, method:method, notes:notes});
+  if (res.ok) { closeModal('payModal'); showToast('Payment recorded', true); setTimeout(function(){ location.reload(); }, 1200); }
+  else        { err.textContent = 'Error: '+(res.error||'Unknown'); err.style.display='block'; }
+}
+
+// New Client Modal
+function openNewClientModal() {
+  ['nc-name','nc-doctor','nc-phone','nc-waid'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('nc-plan').value = 'starter';
+  document.getElementById('nc-days').value = '30';
+  document.getElementById('nc-err').style.display = 'none';
+  document.getElementById('nc-ok').style.display  = 'none';
+  openModal('newClientModal');
+}
+async function submitNewClient() {
+  var name   = document.getElementById('nc-name').value.trim();
+  var doctor = document.getElementById('nc-doctor').value.trim();
+  var phone  = document.getElementById('nc-phone').value.trim();
+  var waid   = document.getElementById('nc-waid').value.trim();
+  var plan   = document.getElementById('nc-plan').value;
+  var days   = parseInt(document.getElementById('nc-days').value) || 30;
+  var err    = document.getElementById('nc-err');
+  var ok     = document.getElementById('nc-ok');
+  if (!name || !doctor || !phone || !waid) {
+    err.textContent = 'All fields are required.'; err.style.display='block'; return;
+  }
+  err.style.display = 'none';
+  var res = await api({action:'new_client', name:name, doctor_name:doctor,
+                       contact_phone:phone, whatsapp_phone_id:waid,
+                       plan:plan, subscription_days:days});
+  if (res.ok) {
+    ok.textContent = 'Client created! ID: ' + res.client_id + ' — refreshing…';
+    ok.style.display = 'block';
+    setTimeout(function(){ location.reload(); }, 2000);
+  } else {
+    err.textContent = 'Error: '+(res.error||'Unknown'); err.style.display='block';
+  }
+}
+</script>
 </body>
 </html>"""
