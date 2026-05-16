@@ -74,7 +74,7 @@ def get_client_by_id(client_id: int) -> dict | None:
     return result.data[0] if result.data else None
 
 
-def create_client(
+def create_clinic_client(
     name: str,
     doctor_name: str,
     whatsapp_phone_id: str,

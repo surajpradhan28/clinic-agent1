@@ -305,7 +305,7 @@ async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
         return
 
     try:
-        new_client = db.create_client(
+        new_client = db.create_clinic_client(
             name=clinic_name,
             doctor_name=doctor_name,
             contact_phone=contact_phone,
