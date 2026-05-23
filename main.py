@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
@@ -327,6 +328,8 @@ async def receive_message(request: Request):
 
     except Exception as exc:
         logger.error("Unhandled error in webhook handler: %s", exc, exc_info=True)
+
+        # ── Notify the patient / doctor that triggered the error ──────────────
         if phone:
             try:
                 await whatsapp.send_text(
@@ -335,6 +338,23 @@ async def receive_message(request: Request):
                 )
             except Exception:
                 pass
+
+        # ── Alert admin on WhatsApp ───────────────────────────────────────────
+        if settings.ADMIN_PHONE:
+            try:
+                tb_lines = traceback.format_exc().splitlines()
+                # Keep last 6 lines of traceback (most relevant)
+                tb_short = "\n".join(tb_lines[-6:]) if len(tb_lines) > 6 else "\n".join(tb_lines)
+                alert_msg = (
+                    f"🚨 *Bot Error Alert*\n\n"
+                    f"*Error:* {type(exc).__name__}: {str(exc)[:200]}\n"
+                    f"*Triggered by:* {phone or 'unknown'}\n\n"
+                    f"*Traceback:*\n```\n{tb_short}\n```"
+                )
+                await whatsapp.send_text(settings.ADMIN_PHONE, alert_msg)
+            except Exception as alert_exc:
+                logger.error("Failed to send admin error alert: %s", alert_exc)
+
         return JSONResponse({"status": "error"}, status_code=200)
 
 
