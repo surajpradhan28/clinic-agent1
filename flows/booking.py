@@ -31,8 +31,9 @@ async def handle_booking_flow(phone: str, name: str, text: str, client: dict) ->
 
     reply_text, appt_row = await agent.get_agent_reply(phone, text, client)
 
-    client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
-    await whatsapp.send_text(phone, reply_text, phone_id=client_pid)
+    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_token = client.get("whatsapp_token") or None
+    await whatsapp.send_text(phone, reply_text, phone_id=client_pid, token=client_token)
 
     if appt_row:
         await _send_booking_confirmation(phone, appt_row, client)
@@ -40,8 +41,9 @@ async def handle_booking_flow(phone: str, name: str, text: str, client: dict) ->
 
 async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> None:
     """Send a structured appointment confirmation message."""
-    client_id  = client["id"]
-    client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_id    = client["id"]
+    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_token = client.get("whatsapp_token") or None
 
     # Read live clinic info from DB (doctor may have updated via WhatsApp)
     info           = db.get_all_clinic_settings(client_id)
@@ -82,5 +84,5 @@ async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> No
         f"A reminder will be sent 24 hours before your appointment. 🙏\n\n"
         f"{footer}"
     )
-    await whatsapp.send_text(phone, confirmation, phone_id=client_pid)
+    await whatsapp.send_text(phone, confirmation, phone_id=client_pid, token=client_token)
     logger.info("[Booking] Confirmation sent (client=%s, appt=%s)", client_id, appt_id)

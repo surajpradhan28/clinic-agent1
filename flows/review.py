@@ -33,8 +33,9 @@ async def send_review_request(
         logger.warning("[Review] No appointment ID — skipping for %s", phone)
         return
 
-    client_id  = client["id"]
-    client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_id    = client["id"]
+    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_token = client.get("whatsapp_token") or None
 
     if db.has_review_been_requested(client_id, phone, appt_id):
         logger.info("[Review] Already sent (client=%s, appt=%s) — skipping", client_id, appt_id)
@@ -58,7 +59,7 @@ async def send_review_request(
         f"Thank you for choosing {clinic_name}! 💚"
     )
 
-    success = await whatsapp.send_text(phone, message, phone_id=client_pid)
+    success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
     if success:
         db.log_review_request(client_id, phone, appt_id)
         logger.info("[Review] Request sent (client=%s, appt=%s)", client_id, appt_id)

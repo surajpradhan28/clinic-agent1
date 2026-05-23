@@ -52,8 +52,9 @@ async def handle_followup_response(phone: str, name: str, text: str, client: dic
     - Classify sentiment → send appropriate reply → save to DB
     - If positive → trigger Google review request (3s delay)
     """
-    client_id  = client["id"]
-    client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_id    = client["id"]
+    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_token = client.get("whatsapp_token") or None
 
     # Read live clinic info from DB
     info        = db.get_all_clinic_settings(client_id)
@@ -81,7 +82,7 @@ async def handle_followup_response(phone: str, name: str, text: str, client: dic
             f"Thank you for trusting {clinic_name} with your health. "
             f"Take care and stay well! 💚"
         )
-        await whatsapp.send_text(phone, reply, phone_id=client_pid)
+        await whatsapp.send_text(phone, reply, phone_id=client_pid, token=client_token)
         await asyncio.sleep(3)
         await send_review_request(phone, name, appt_id, client=client, review_link=review_link)
 
@@ -92,7 +93,7 @@ async def handle_followup_response(phone: str, name: str, text: str, client: dic
             f"{doctor_name} so they can re-evaluate your condition.\n\n"
             f"Reply *appointment* to book a follow-up, or call us directly."
         )
-        await whatsapp.send_text(phone, reply, phone_id=client_pid)
+        await whatsapp.send_text(phone, reply, phone_id=client_pid, token=client_token)
 
     else:
         reply = (
@@ -102,4 +103,4 @@ async def handle_followup_response(phone: str, name: str, text: str, client: dic
             f"to book a follow-up with {doctor_name}.\n\n"
             f"Reply *appointment* anytime to book. Take care! 🌿"
         )
-        await whatsapp.send_text(phone, reply, phone_id=client_pid)
+        await whatsapp.send_text(phone, reply, phone_id=client_pid, token=client_token)

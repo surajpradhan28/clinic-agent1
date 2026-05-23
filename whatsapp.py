@@ -89,11 +89,18 @@ def parse_incoming_message(body: dict) -> Optional[dict]:
 
 # ── Send text message ─────────────────────────────────────────────────────────
 
-async def send_text(phone: str, text: str, phone_id: str | None = None) -> bool:
+async def send_text(
+    phone: str,
+    text: str,
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> bool:
     """
     Send a plain text WhatsApp message. Returns True on success.
     phone_id: the sending clinic's Meta phone_number_id.
               Defaults to settings.WHATSAPP_PHONE_ID if not provided.
+    token: the clinic's WhatsApp access token.
+           Defaults to settings.WHATSAPP_TOKEN if not provided.
     """
     payload = {
         "messaging_product": "whatsapp",
@@ -102,7 +109,7 @@ async def send_text(phone: str, text: str, phone_id: str | None = None) -> bool:
         "type": "text",
         "text": {"preview_url": False, "body": text},
     }
-    return await _post(payload, phone_id=phone_id)
+    return await _post(payload, phone_id=phone_id, token=token)
 
 
 # ── Send interactive LIST message ─────────────────────────────────────────────
@@ -115,6 +122,7 @@ async def send_slot_list(
     morning_slots: list[str],
     evening_slots: list[str],
     phone_id: str | None = None,
+    token: str | None = None,
 ) -> bool:
     def _make_rows(slots: list[str]) -> list[dict]:
         return [{"id": slot, "title": slot, "description": ""} for slot in slots]
@@ -126,7 +134,7 @@ async def send_slot_list(
         sections.append({"title": "Evening", "rows": _make_rows(evening_slots)})
 
     if not sections:
-        await send_text(phone, "Sorry, no slots available for that date. Please try another day.", phone_id=phone_id)
+        await send_text(phone, "Sorry, no slots available for that date. Please try another day.", phone_id=phone_id, token=token)
         return False
 
     payload = {
@@ -145,7 +153,7 @@ async def send_slot_list(
             },
         },
     }
-    return await _post(payload, phone_id=phone_id)
+    return await _post(payload, phone_id=phone_id, token=token)
 
 
 # ── Send interactive BUTTON message ──────────────────────────────────────────
@@ -157,6 +165,7 @@ async def send_buttons(
     header_text: str = "",
     footer_text: str = "",
     phone_id: str | None = None,
+    token: str | None = None,
 ) -> bool:
     interactive: dict[str, Any] = {
         "type": "button",
@@ -180,31 +189,41 @@ async def send_buttons(
         "type": "interactive",
         "interactive": interactive,
     }
-    return await _post(payload, phone_id=phone_id)
+    return await _post(payload, phone_id=phone_id, token=token)
 
 
 # ── Mark message as read ──────────────────────────────────────────────────────
 
-async def mark_as_read(message_id: str, phone_id: str | None = None) -> None:
+async def mark_as_read(
+    message_id: str,
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> None:
     payload = {
         "messaging_product": "whatsapp",
         "status": "read",
         "message_id": message_id,
     }
-    await _post(payload, phone_id=phone_id)
+    await _post(payload, phone_id=phone_id, token=token)
 
 
 # ── Internal HTTP helper ──────────────────────────────────────────────────────
 
-async def _post(payload: dict, phone_id: str | None = None) -> bool:
+async def _post(
+    payload: dict,
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> bool:
     """
     POST to the Meta Graph API.
-    Uses phone_id to construct the URL (which clinic's number is sending).
+    phone_id: which clinic's number is sending (defaults to global WHATSAPP_PHONE_ID).
+    token: per-client access token (defaults to global WHATSAPP_TOKEN).
     """
     pid = phone_id or settings.WHATSAPP_PHONE_ID
+    tok = token or settings.WHATSAPP_TOKEN
     url = f"{BASE_URL}/{pid}/messages"
     headers = {
-        "Authorization": f"Bearer {settings.WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {tok}",
         "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=10) as client:

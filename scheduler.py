@@ -38,8 +38,9 @@ async def _run_followups() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
-            client_id  = client["id"]
-            client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             # Read doctor name from clinic_settings (doctor may have updated it via WhatsApp)
             db_settings = db.get_all_clinic_settings(client_id)
             doctor_name = db_settings.get("doctor_name") or client.get("doctor_name") or "your doctor"
@@ -65,7 +66,7 @@ async def _run_followups() -> None:
                     f"2️⃣  *Same as before* 😐\n"
                     f"3️⃣  *Not well / Getting worse* 😔"
                 )
-                success = await whatsapp.send_text(phone, message, phone_id=client_pid)
+                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
                 if success:
                     db.mark_followup_sent(followup_id)
                     logger.info("[Scheduler] Follow-up sent (client=%s, followup=%s)", client_id, followup_id)
@@ -83,8 +84,9 @@ async def _run_reminders() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
-            client_id  = client["id"]
-            client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             db_settings = db.get_all_clinic_settings(client_id)
             clinic_name    = db_settings.get("clinic_name")    or client.get("name", "")
             doctor_name    = db_settings.get("doctor_name")    or client.get("doctor_name", "")
@@ -118,7 +120,7 @@ async def _run_reminders() -> None:
                     f"📍 {clinic_address}\n\n"
                     f"Please arrive 5-10 minutes early. See you tomorrow! 🙏"
                 )
-                success = await whatsapp.send_text(phone, message, phone_id=client_pid)
+                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
                 if success:
                     db.mark_reminder_sent(appt_id)
                     logger.info("[Scheduler] Reminder sent (client=%s, appt=%s)", client_id, appt_id)
@@ -144,8 +146,9 @@ async def _run_daily_doctor_schedule() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
-            client_id  = client["id"]
-            client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             doctor_phone = (client.get("contact_phone") or "").strip() or (
                 settings.DOCTOR_PHONE if client_id == 1 else ""
             )
@@ -175,7 +178,7 @@ async def _run_daily_doctor_schedule() -> None:
                 lines.append(f"\n_{len(appointments)} appointment(s) today. Have a great day! 🏥_")
                 message = "\n".join(lines)
 
-            success = await whatsapp.send_text(doctor_phone, message, phone_id=client_pid)
+            success = await whatsapp.send_text(doctor_phone, message, phone_id=client_pid, token=client_token)
             if success:
                 logger.info(
                     "[Scheduler] Daily schedule sent to client=%s doctor (%d appts)",
@@ -221,6 +224,7 @@ async def _run_expiry_check() -> None:
                 continue
             doctor_phone = (client.get("contact_phone") or "").strip()
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             if not doctor_phone:
                 continue
             msg = (
@@ -231,7 +235,7 @@ async def _run_expiry_check() -> None:
                 f"then service pauses.\n\n"
                 f"Please renew now to avoid interruption. Contact support. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid)
+            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
             if success:
                 db_conn.table("subscriptions").update({"warning_7d_sent": True})\
                     .eq("id", sub["id"]).execute()
@@ -254,6 +258,7 @@ async def _run_expiry_check() -> None:
                 continue
             doctor_phone = (client.get("contact_phone") or "").strip()
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             if not doctor_phone:
                 continue
             msg = (
@@ -263,7 +268,7 @@ async def _run_expiry_check() -> None:
                 f"then the bot will stop responding to patients.\n\n"
                 f"Please renew NOW. Contact support immediately. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid)
+            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
             if success:
                 db_conn.table("subscriptions").update({"warning_3d_sent": True})\
                     .eq("id", sub["id"]).execute()
@@ -298,6 +303,7 @@ async def _run_expiry_check() -> None:
 
             doctor_phone = (client.get("contact_phone") or "").strip()
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
             grace_until  = client.get("grace_until") or "unknown"
 
             if not doctor_phone:
@@ -310,7 +316,7 @@ async def _run_expiry_check() -> None:
                 f"Please renew before {grace_until} to keep service uninterrupted.\n"
                 f"Contact support to renew. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid)
+            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
             if success:
                 db_conn.table("subscriptions").update({"grace_warning_sent": True})\
                     .eq("id", sub_row[0]["id"]).execute()

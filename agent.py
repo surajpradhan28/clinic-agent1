@@ -463,8 +463,9 @@ async def _execute_function(
 # ── Doctor function execution ─────────────────────────────────────────────────
 
 async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) -> str:
-    client_id  = client["id"]
-    client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_id    = client["id"]
+    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    client_token = client.get("whatsapp_token") or None
 
     if fn_name == "check_available_slots":
         result_str, _ = await _execute_function(fn_name, fn_args, "", client)
@@ -508,7 +509,7 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
                         f"We apologise for the inconvenience. Please reply *appointment* "
                         f"to book a new slot. 🙏"
                     )
-                    await whatsapp.send_text(appt["patient_phone"], msg, phone_id=client_pid)
+                    await whatsapp.send_text(appt["patient_phone"], msg, phone_id=client_pid, token=client_token)
                     notified.append(appt["patient_name"])
                 except Exception as notify_exc:
                     logger.error("Failed to notify %s: %s", appt.get("patient_phone"), notify_exc)

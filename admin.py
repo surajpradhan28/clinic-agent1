@@ -283,21 +283,30 @@ async def _handle_payment(phone: str, cmd: str, pid: str) -> None:
 
 
 async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
-    """Parse `new client: Name|Doctor|Phone|PhoneId|plan` and onboard."""
+    """Parse `new client: Name|Doctor|Phone|PhoneId|plan[|token]` and onboard.
+
+    The 6th field (token) is optional. If omitted, the global WHATSAPP_TOKEN is used.
+    Use a per-client token when the clinic has their own Meta Business Account.
+    """
     body = cmd[len("new client:"):].strip()
     parts = [p.strip() for p in body.split("|")]
     if len(parts) < 5:
         await whatsapp.send_text(
             phone,
             "❌ Format: `new client: Name|Doctor|Phone|PhoneId|plan`\n"
+            "Optional 6th field for a dedicated token: `...|plan|EAAxxxTOKEN`\n"
             "Example: `new client: City Clinic|Dr. Patel|919876543210|1234567890|pro`",
             phone_id=pid,
         )
         return
 
-    clinic_name, doctor_name, contact_phone, wa_phone_id, plan = (
-        parts[0], parts[1], parts[2], parts[3], parts[4].lower()
-    )
+    clinic_name   = parts[0]
+    doctor_name   = parts[1]
+    contact_phone = parts[2]
+    wa_phone_id   = parts[3]
+    plan          = parts[4].lower()
+    wa_token      = parts[5] if len(parts) > 5 else ""   # optional per-client token
+
     if plan not in ("starter", "pro", "suite"):
         await whatsapp.send_text(
             phone, "❌ Plan must be: starter, pro, or suite.", phone_id=pid
@@ -311,14 +320,16 @@ async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
             contact_phone=contact_phone,
             whatsapp_phone_id=wa_phone_id,
             plan=plan,
+            whatsapp_token=wa_token,
         )
         new_id = new_client["id"]
 
-        # Create a 30-day starter subscription
+        # Create a 30-day subscription
         sub_start = date.today().isoformat()
         sub_end   = (date.today() + timedelta(days=30)).isoformat()
         db.create_subscription(new_id, plan, 0.0, sub_start, sub_end)
 
+        token_line = "\n🔑 Token: custom (per-client)" if wa_token else "\n🔑 Token: shared (global)"
         await whatsapp.send_text(
             phone,
             f"✅ *New client onboarded!*\n\n"
@@ -327,12 +338,14 @@ async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
             f"👨‍⚕️ Doctor: {doctor_name}\n"
             f"📱 Contact: {contact_phone}\n"
             f"🔗 WA Phone ID: {wa_phone_id}\n"
-            f"📋 Plan: {plan}\n"
+            f"📋 Plan: {plan}"
+            f"{token_line}\n"
             f"📅 Subscription: {sub_start} → {sub_end} (30 days)\n\n"
-            f"Next: add their WA number to Meta's allowed list, then test!",
+            f"Next: register their number in your Meta app, then test!",
             phone_id=pid,
         )
-        logger.info("[Admin] New client created: id=%s name=%s plan=%s", new_id, clinic_name, plan)
+        logger.info("[Admin] New client created: id=%s name=%s plan=%s token=%s",
+                    new_id, clinic_name, plan, "custom" if wa_token else "shared")
     except Exception as exc:
         logger.error("[Admin] Failed to create client: %s", exc, exc_info=True)
         await whatsapp.send_text(
@@ -367,44 +380,43 @@ def render_dashboard() -> str:
     month_label = today.strftime("%B %Y")
     admin_key   = settings.ADMIN_SECRET or ""
 
-    # ── Fetch all data ────────────────────────────────────────────────────────
-    clients = db.list_all_clients()
+    # ── Fetch all data (each query fault-tolerant) ────────────────────────────
+    def _q(fn):
+        try:
+            return fn() or []
+        except Exception as _e:
+            logger.warning("[Admin] DB query failed (skipped): %s", _e)
+            return []
+
+    clients = _q(db.list_all_clients)
 
     # Usage this month
-    usage_rows = (
-        db_conn.table("usage_log").select("*")
-        .eq("month", month_start).execute().data or []
-    )
+    usage_rows = _q(lambda: db_conn.table("usage_log").select("*")
+        .eq("month", month_start).execute().data)
     usage_map = {r["client_id"]: r for r in usage_rows}
 
     # Usage history — last 4 months
     hist_start = (today.replace(day=1) - timedelta(days=93)).replace(day=1).isoformat()
-    hist_rows = (
-        db_conn.table("usage_log").select("*, clients(name)")
-        .gte("month", hist_start).order("month", desc=True).execute().data or []
-    )
+    hist_rows = _q(lambda: db_conn.table("usage_log").select("*, clients(name)")
+        .gte("month", hist_start).order("month", desc=True).execute().data)
 
     # All payments (recent first)
-    all_pays = (
-        db_conn.table("payments").select("*, clients(name)")
-        .order("payment_date", desc=True).limit(200).execute().data or []
-    )
+    all_pays = _q(lambda: db_conn.table("payments").select("*, clients(name)")
+        .order("payment_date", desc=True).limit(200).execute().data)
     client_pays: dict = {}
     for p in all_pays:
         client_pays.setdefault(p["client_id"], []).append(p)
 
     # Latest subscription per client
-    all_subs = (
-        db_conn.table("subscriptions").select("*")
-        .order("end_date", desc=True).execute().data or []
-    )
+    all_subs = _q(lambda: db_conn.table("subscriptions").select("*")
+        .order("end_date", desc=True).execute().data)
     subs_map: dict = {}
     for s in all_subs:
         if s["client_id"] not in subs_map:
             subs_map[s["client_id"]] = s
 
     # Patient counts
-    pat_rows = db_conn.table("patients").select("client_id").execute().data or []
+    pat_rows = _q(lambda: db_conn.table("patients").select("client_id").execute().data)
     pat_counts: dict = {}
     for p in pat_rows:
         pat_counts[p["client_id"]] = pat_counts.get(p["client_id"], 0) + 1
@@ -423,7 +435,7 @@ def render_dashboard() -> str:
             rev_this_month += amt
 
     # Clinic settings (doctor name, address, etc.)
-    all_cfg = db_conn.table("clinic_settings").select("*").execute().data or []
+    all_cfg = _q(lambda: db_conn.table("clinic_settings").select("*").execute().data)
     cfg_by_client: dict = {}
     for row in all_cfg:
         cfg_by_client.setdefault(row["client_id"], {})[row["key"]] = row["value"]
@@ -478,45 +490,40 @@ def render_dashboard() -> str:
         can_activate = stat in ("suspended", "expired")
         if can_activate:
             action_btn = (
-                "<button class='btn btn-ok' "
-                "onclick=\"doAction({cid},'activate','{nm}')\">&#10003; Activate</button>"
-                .format(cid=cid, nm=cname_js)
+                f"<button class='btn btn-ok' "
+                f"onclick=\"doAction({cid},'activate','{cname_js}')\">&#10003; Activate</button>"
             )
         else:
             action_btn = (
-                "<button class='btn btn-warn' "
-                "onclick=\"doAction({cid},'suspend','{nm}')\">&#9940; Suspend</button>"
-                .format(cid=cid, nm=cname_js)
+                f"<button class='btn btn-warn' "
+                f"onclick=\"doAction({cid},'suspend','{cname_js}')\">&#9940; Suspend</button>"
             )
 
         pay_btn = (
-            "<button class='btn btn-primary' "
-            "onclick=\"openPayModal({cid},'{nm}')\">&#128176; Payment</button>"
-            .format(cid=cid, nm=cname_js)
+            f"<button class='btn btn-primary' "
+            f"onclick=\"openPayModal({cid},'{cname_js}')\">&#128176; Payment</button>"
         )
 
+        _bk  = u.get("bookings", 0)
+        _cx  = u.get("cancels", 0)
+        _fu  = u.get("followups", 0)
+        _rv  = u.get("reviews", 0)
+        _ph  = c.get("contact_phone", "—")
         rows_html += (
-            "<tr>"
-            "<td style='font-weight:700;color:#075E54'>{cid}</td>"
-            "<td><b>{name}</b><br><small class='muted'>{phone}</small></td>"
-            "<td><small>{doctor}</small></td>"
-            "<td><span class='badge {stat_cls}'>{stat}</span>{grace_html}</td>"
-            "<td><span class='plan-badge'>{plan}</span></td>"
-            "<td style='font-size:0.78rem'>{sub_s}<br><span class='muted'>&rarr;</span> {sub_e}</td>"
-            "<td class='num-cell'>{pats}</td>"
-            "<td style='font-size:0.8rem'><b>{bk}</b> bk &nbsp;"
-            "<span class='muted'>{cx} cx &nbsp;{fu} fu &nbsp;{rv} rv</span></td>"
-            "<td class='num-cell' style='color:#075E54;font-weight:600'>&#8377;{rev:.0f}</td>"
-            "<td class='pays'>{pay_html}</td>"
-            "<td class='actions-cell'>{action_btn}{pay_btn}</td>"
-            "</tr>"
-        ).format(
-            cid=cid, name=cname, phone=c.get("contact_phone", "—"), doctor=doctor,
-            stat_cls=stat_cls, stat=stat, grace_html=grace_html, plan=plan,
-            sub_s=sub_start_str, sub_e=sub_end_str, pats=pats,
-            bk=u.get("bookings", 0), cx=u.get("cancels", 0),
-            fu=u.get("followups", 0), rv=u.get("reviews", 0),
-            rev=rev, pay_html=pay_html, action_btn=action_btn, pay_btn=pay_btn,
+            f"<tr>"
+            f"<td style='font-weight:700;color:#075E54'>{cid}</td>"
+            f"<td><b>{cname}</b><br><small class='muted'>{_ph}</small></td>"
+            f"<td><small>{doctor}</small></td>"
+            f"<td><span class='badge {stat_cls}'>{stat}</span>{grace_html}</td>"
+            f"<td><span class='plan-badge'>{plan}</span></td>"
+            f"<td style='font-size:0.78rem'>{sub_start_str}<br><span class='muted'>&rarr;</span> {sub_end_str}</td>"
+            f"<td class='num-cell'>{pats}</td>"
+            f"<td style='font-size:0.8rem'><b>{_bk}</b> bk &nbsp;"
+            f"<span class='muted'>{_cx} cx &nbsp;{_fu} fu &nbsp;{_rv} rv</span></td>"
+            f"<td class='num-cell' style='color:#075E54;font-weight:600'>&#8377;{rev:.0f}</td>"
+            f"<td class='pays'>{pay_html}</td>"
+            f"<td class='actions-cell'>{action_btn}{pay_btn}</td>"
+            f"</tr>"
         )
 
     if not rows_html:

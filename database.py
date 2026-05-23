@@ -82,23 +82,27 @@ def create_clinic_client(
     email: str = "",
     plan: str = "starter",
     trial_days: int = 14,
+    whatsapp_token: str = "",
 ) -> dict:
     """Onboard a new clinic. Returns the new client row."""
     from datetime import date, timedelta
     db = get_db()
     trial_end = (date.today() + timedelta(days=trial_days)).isoformat()
+    row: dict = {
+        "name": name,
+        "doctor_name": doctor_name,
+        "whatsapp_phone_id": whatsapp_phone_id,
+        "contact_phone": contact_phone,
+        "email": email,
+        "plan": plan,
+        "status": "trial",
+        "trial_ends_at": trial_end,
+    }
+    if whatsapp_token:
+        row["whatsapp_token"] = whatsapp_token
     result = (
         db.table("clients")
-        .insert({
-            "name": name,
-            "doctor_name": doctor_name,
-            "whatsapp_phone_id": whatsapp_phone_id,
-            "contact_phone": contact_phone,
-            "email": email,
-            "plan": plan,
-            "status": "trial",
-            "trial_ends_at": trial_end,
-        })
+        .insert(row)
         .execute()
     )
     if not result.data:
