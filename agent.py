@@ -378,6 +378,41 @@ _TOOLS_DOCTOR = [
     },
 ]
 
+# ── Doctor plan-feature sets ────────────────────────────────────────────────
+_DOCTOR_STARTER_FNS: frozenset = frozenset({
+    "check_available_slots", "view_appointments",
+    "block_slots", "unblock_slots", "view_blocked_slots", "view_clinic_info",
+})
+_DOCTOR_PRO_FNS: frozenset = _DOCTOR_STARTER_FNS | frozenset({
+    "update_clinic_info", "broadcast_message",
+})
+_DOCTOR_SUITE_FNS: frozenset = _DOCTOR_PRO_FNS | frozenset({
+    "add_clinic_note", "list_clinic_notes", "remove_clinic_note",
+    "set_day_schedule", "clear_day_schedule",
+})
+_DOCTOR_FEATURE_NAMES: dict = {
+    "update_clinic_info":  "Update Clinic Info",
+    "broadcast_message":   "Broadcast Message to All Patients",
+    "add_clinic_note":     "Clinic Knowledge Notes",
+    "list_clinic_notes":   "Clinic Knowledge Notes",
+    "remove_clinic_note":  "Clinic Knowledge Notes",
+    "set_day_schedule":    "Custom Day Schedule",
+    "clear_day_schedule":  "Custom Day Schedule",
+}
+
+
+def _get_doctor_tools(plan: str) -> list[dict]:
+    """Return doctor tool list filtered to the client's subscription plan."""
+    tier = plan.lower()
+    if tier == "suite":
+        allowed = _DOCTOR_SUITE_FNS
+    elif tier == "pro":
+        allowed = _DOCTOR_PRO_FNS
+    else:
+        allowed = _DOCTOR_STARTER_FNS
+    return [t for t in _TOOLS_DOCTOR if t["function"]["name"] in allowed]
+
+
 
 # ── Patient function execution ─────────────────────────────────────────────────
 
@@ -517,6 +552,31 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
     client_id    = client["id"]
     client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
     client_token = client.get("whatsapp_token") or None
+
+    # ── Plan-gate check ────────────────────────────────────────────────────
+    _plan_tier = client.get("plan", "starter").lower()
+    if _plan_tier == "suite":
+        _allowed_fns = _DOCTOR_SUITE_FNS
+    elif _plan_tier == "pro":
+        _allowed_fns = _DOCTOR_PRO_FNS
+    else:
+        _allowed_fns = _DOCTOR_STARTER_FNS
+    if fn_name not in _allowed_fns:
+        _required = "Suite" if fn_name in (_DOCTOR_SUITE_FNS - _DOCTOR_PRO_FNS) else "Pro"
+        _feature  = _DOCTOR_FEATURE_NAMES.get(fn_name, fn_name.replace("_", " ").title())
+        return json.dumps({
+            "upgrade_required": True,
+            "reply": (
+                f"⚠️ *{_feature}* is not available on your current "
+                f"*{_plan_tier.title()} Plan*.
+
+"
+                f"U0001f680 To use this feature, please upgrade to the *{_required} Plan*.
+
+"
+                f"Contact your administrator to upgrade your subscription."
+            ),
+        })
 
     if fn_name == "check_available_slots":
         result_str, _ = await _execute_function(fn_name, fn_args, "", client)
@@ -852,7 +912,7 @@ async def _get_doctor_reply(phone: str, user_text: str, client: dict) -> tuple[s
 
     response = await _openai.chat.completions.create(
         model=settings.OPENAI_MODEL, messages=messages,
-        tools=_TOOLS_DOCTOR, tool_choice="auto",
+        tools=_get_doctor_tools(client.get("plan", "starter")), tool_choice="auto",
         max_tokens=400, temperature=0.3,
     )
     choice = response.choices[0]
