@@ -23,8 +23,10 @@ Routing on every incoming message:
 
 from __future__ import annotations
 
+import collections
 import logging
 import sys
+import time
 import traceback
 from contextlib import asynccontextmanager
 
@@ -47,6 +49,55 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ── Webhook deduplication (in-memory, 5-minute TTL) ──────────────────────────
+# WhatsApp Cloud API sometimes delivers the same webhook event more than once.
+# We track recently-seen message_ids so duplicate deliveries are silently dropped.
+
+_seen_message_ids: dict[str, float] = {}   # message_id → first-seen timestamp
+_DEDUP_TTL_SECS = 300                       # 5 minutes
+
+
+def _is_duplicate_message(message_id: str) -> bool:
+    """Return True if this message_id was already processed within the TTL window."""
+    if not message_id:
+        return False
+    now = time.monotonic()
+    # Purge expired entries to keep memory bounded
+    expired = [mid for mid, ts in _seen_message_ids.items() if now - ts > _DEDUP_TTL_SECS]
+    for mid in expired:
+        del _seen_message_ids[mid]
+    if message_id in _seen_message_ids:
+        return True
+    _seen_message_ids[message_id] = now
+    return False
+
+
+# ── Per-user rate limiting (in-memory, sliding window) ───────────────────────
+# Max 20 messages per phone number per 60-second window.
+# Protects against accidental message loops and deliberate flooding.
+
+_user_timestamps: dict[str, collections.deque] = collections.defaultdict(
+    lambda: collections.deque()
+)
+_RATE_LIMIT_WINDOW_SECS = 60
+_RATE_LIMIT_MAX_MSGS    = 20
+
+
+def _is_rate_limited(phone: str) -> bool:
+    """Return True if this phone number has exceeded the rate limit."""
+    if not phone:
+        return False
+    now  = time.monotonic()
+    dq   = _user_timestamps[phone]
+    # Remove timestamps outside the sliding window
+    while dq and now - dq[0] > _RATE_LIMIT_WINDOW_SECS:
+        dq.popleft()
+    if len(dq) >= _RATE_LIMIT_MAX_MSGS:
+        return True
+    dq.append(now)
+    return False
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -234,6 +285,16 @@ async def receive_message(request: Request):
         text             = msg["text"]
         message_id       = msg.get("message_id", "")
         phone_number_id  = msg.get("phone_number_id", "")
+
+        # ── Deduplication: drop re-delivered webhooks ─────────────────────────
+        if _is_duplicate_message(message_id):
+            logger.info("⚡ Duplicate message_id=%s from %s — ignored", message_id, phone)
+            return JSONResponse({"status": "duplicate"})
+
+        # ── Rate limiting: protect against flooding ───────────────────────────
+        if _is_rate_limited(phone):
+            logger.warning("🚫 Rate limit hit for %s — dropping message", phone)
+            return JSONResponse({"status": "rate_limited"})
 
         # ── STEP 0: Super-admin routing ───────────────────────────────────────
         if _is_admin(phone):

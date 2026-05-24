@@ -131,6 +131,60 @@ async def _run_reminders() -> None:
         logger.error("[Scheduler] Reminder job error: %s", exc, exc_info=True)
 
 
+# ── Job 2b: Send 1-hour appointment reminders ────────────────────────────────
+
+async def _run_1h_reminders() -> None:
+    logger.info("[Scheduler] Running 1-hour reminder job…")
+    try:
+        clients = db.get_all_active_clients()
+        for client in clients:
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
+            db_settings  = db.get_all_clinic_settings(client_id)
+            clinic_name    = db_settings.get("clinic_name")    or client.get("name", "")
+            doctor_name    = db_settings.get("doctor_name")    or client.get("doctor_name", "")
+            clinic_address = db_settings.get("clinic_address") or ""
+
+            due = db.get_appointments_for_1h_reminder(client_id)
+            if not due:
+                continue
+
+            logger.info("[Scheduler] Client %s: %d 1h-reminder(s) due", client_id, len(due))
+            for appt in due:
+                phone     = appt["patient_phone"]
+                name      = appt["patient_name"]
+                appt_date = appt["appointment_date"]
+                slot      = appt["slot_time"]
+                appt_id   = appt["id"]
+
+                try:
+                    from datetime import datetime as _dt
+                    date_display = _dt.strptime(appt_date, "%Y-%m-%d").strftime("%d %B %Y")
+                except Exception:
+                    date_display = appt_date
+
+                message = (
+                    f"⏰ *Appointment in 1 Hour!*\n\n"
+                    f"Hi *{name}!* Just a quick reminder — your appointment is *in about 1 hour*.\n\n"
+                    f"🏥 *{clinic_name}*\n"
+                    f"👨‍⚕️ {doctor_name}\n"
+                    f"📅 {date_display}\n"
+                    f"⏰ *{slot}*\n"
+                    f"📍 {clinic_address}\n\n"
+                    f"Please leave now to arrive on time. See you soon! 🙏"
+                )
+                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
+                if success:
+                    db.mark_1h_reminder_sent(appt_id)
+                    logger.info("[Scheduler] 1h reminder sent (client=%s, appt=%s)", client_id, appt_id)
+                else:
+                    logger.error("[Scheduler] Failed to send 1h reminder (client=%s, phone=%s)", client_id, phone)
+
+    except Exception as exc:
+        logger.error("[Scheduler] 1h reminder job error: %s", exc, exc_info=True)
+
+
 # ── Job 3: Send daily appointment schedule to each doctor ─────────────────────
 
 async def _run_daily_doctor_schedule() -> None:
@@ -340,6 +394,11 @@ def start() -> None:
         id="send_reminders", replace_existing=True, misfire_grace_time=300,
     )
     scheduler.add_job(
+        _run_1h_reminders,
+        trigger=IntervalTrigger(minutes=15),   # Check every 15 min for precision
+        id="send_1h_reminders", replace_existing=True, misfire_grace_time=120,
+    )
+    scheduler.add_job(
         _run_daily_doctor_schedule,
         trigger=CronTrigger(hour=settings.DAILY_SCHEDULE_HOUR, minute=0),
         id="daily_doctor_schedule", replace_existing=True, misfire_grace_time=600,
@@ -352,8 +411,8 @@ def start() -> None:
 
     scheduler.start()
     logger.info(
-        "[Scheduler] Started — followups + reminders every %dh | "
-        "daily schedule at %02d:00 UTC | expiry check at 02:00 UTC",
+        "[Scheduler] Started — followups + 24h-reminders every %dh | "
+        "1h-reminders every 15min | daily schedule at %02d:00 UTC | expiry check at 02:00 UTC",
         settings.JOB_INTERVAL_HOURS,
         settings.DAILY_SCHEDULE_HOUR,
     )

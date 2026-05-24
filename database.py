@@ -331,6 +331,27 @@ def create_appointment(
     slot_time: str,
 ) -> dict:
     db = get_db()
+
+    # ── Double-booking guard ──────────────────────────────────────────────────
+    # Check if this slot is already taken before inserting.
+    # This prevents race conditions where two patients book the same slot
+    # simultaneously and the AI hasn't refreshed its available-slots cache.
+    conflict = (
+        db.table("appointments")
+        .select("id")
+        .eq("client_id", client_id)
+        .eq("appointment_date", appointment_date)
+        .eq("slot_time", slot_time)
+        .eq("status", "confirmed")
+        .limit(1)
+        .execute()
+    )
+    if conflict.data:
+        raise ValueError(
+            f"Slot {slot_time} on {appointment_date} is already booked. "
+            "Please choose a different time."
+        )
+
     appt = (
         db.table("appointments")
         .insert({
@@ -464,6 +485,34 @@ def get_appointments_for_reminder(client_id: int) -> list[dict]:
 def mark_reminder_sent(appt_id: int) -> None:
     db = get_db()
     db.table("appointments").update({"reminder_sent": True}).eq("id", appt_id).execute()
+
+
+def get_appointments_for_1h_reminder(client_id: int) -> list[dict]:
+    """Return confirmed appointments whose slot is 50–70 min from now and 1h reminder not sent."""
+    db = get_db()
+    now          = datetime.now(timezone.utc)
+    window_start = now + timedelta(minutes=50)
+    window_end   = now + timedelta(minutes=70)
+
+    result = (
+        db.table("appointments")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("status", "confirmed")
+        .eq("reminder_1h_sent", False)
+        .execute()
+    )
+    due = []
+    for appt in (result.data or []):
+        appt_dt = _parse_appt_datetime(appt)
+        if appt_dt and window_start <= appt_dt <= window_end:
+            due.append(appt)
+    return due
+
+
+def mark_1h_reminder_sent(appt_id: int) -> None:
+    db = get_db()
+    db.table("appointments").update({"reminder_1h_sent": True}).eq("id", appt_id).execute()
 
 
 def mark_appointment_completed(appt_id: int) -> None:
