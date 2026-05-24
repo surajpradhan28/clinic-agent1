@@ -462,7 +462,19 @@ async def _execute_function(
         if not appt_id:
             return json.dumps({"success": False, "error": "appointment_id required"}), None
         try:
-            db.cancel_appointment(int(appt_id))
+            # ── Ownership check: verify this appointment belongs to this patient at this clinic ──
+            owned = db.get_upcoming_appointment(client_id, phone)
+            if not owned or owned["id"] != int(appt_id):
+                logger.warning(
+                    "cancel_appointment ownership check FAILED "
+                    "(client=%s, phone=%s, requested_id=%s, owned_id=%s)",
+                    client_id, phone, appt_id, owned["id"] if owned else "none",
+                )
+                return json.dumps({
+                    "success": False,
+                    "error": "Appointment not found for your account. Please call get_my_appointment first.",
+                }), None
+            db.cancel_appointment(int(appt_id), client_id=client_id)
             return json.dumps({"success": True, "message": f"Appointment {appt_id} cancelled."}), None
         except Exception as exc:
             return json.dumps({"success": False, "error": str(exc)}), None
@@ -475,6 +487,17 @@ async def _execute_function(
             return json.dumps({"success": False, "error": "appointment_id, new_date and new_slot required"}), None
         try:
             cur = db.get_upcoming_appointment(client_id, phone)
+            # ── Ownership check: verify this appointment belongs to this patient at this clinic ──
+            if not cur or cur["id"] != int(appt_id):
+                logger.warning(
+                    "reschedule_appointment ownership check FAILED "
+                    "(client=%s, phone=%s, requested_id=%s, owned_id=%s)",
+                    client_id, phone, appt_id, cur["id"] if cur else "none",
+                )
+                return json.dumps({
+                    "success": False,
+                    "error": "Appointment not found for your account. Please call get_my_appointment first.",
+                }), None
             patient_name = cur["patient_name"] if cur else "Patient"
             new_appt = db.reschedule_appointment(client_id, int(appt_id), phone, patient_name, new_date, new_slot)
             return json.dumps({
@@ -524,7 +547,7 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
             notified = []
             for appt in affected:
                 try:
-                    db.cancel_appointment(appt["id"])
+                    db.cancel_appointment(appt["id"], client_id=client_id)
                     try:
                         date_display = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %d %B %Y")
                     except Exception:
