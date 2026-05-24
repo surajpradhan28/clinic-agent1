@@ -348,6 +348,27 @@ _TOOLS_DOCTOR = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "broadcast_message",
+            "description": (
+                "Send a WhatsApp message to ALL registered patients of this clinic. "
+                "Use for announcements, holiday notices, health tips, etc. "
+                "Always confirm the message text before sending."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to send to all patients.",
+                    }
+                },
+                "required": ["message"],
+            },
+        },
+    },
 ]
 
 
@@ -649,6 +670,37 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
         except Exception as exc:
             return json.dumps({"success": False, "error": str(exc)})
 
+    elif fn_name == "broadcast_message":
+        message = fn_args.get("message", "").strip()
+        if not message:
+            return json.dumps({"success": False, "error": "Message cannot be empty"})
+        try:
+            phones = db.get_all_patient_phones(client_id)
+            if not phones:
+                return json.dumps({"success": False, "message": "No registered patients found to broadcast to."})
+            sent_count = 0
+            failed_count = 0
+            for patient_phone in phones:
+                try:
+                    await whatsapp.send_text(patient_phone, message, phone_id=client_pid, token=client_token)
+                    sent_count += 1
+                except Exception as bc_exc:
+                    logger.error("Broadcast failed for %s: %s", patient_phone, bc_exc)
+                    failed_count += 1
+            result_msg = f"✅ Broadcast sent to {sent_count} patient(s)."
+            if failed_count:
+                result_msg += f" ⚠️ Failed for {failed_count} patient(s)."
+            return json.dumps({
+                "success": True,
+                "total_patients": len(phones),
+                "sent": sent_count,
+                "failed": failed_count,
+                "message": result_msg,
+            })
+        except Exception as exc:
+            logger.error("broadcast_message error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)})
+
     return json.dumps({"error": f"Unknown doctor function: {fn_name}"})
 
 
@@ -726,6 +778,7 @@ You help the doctor manage their clinic schedule. Available actions:
 - Update clinic info (name, address, phone, doctor name)
 - Add / list / remove custom AI knowledge notes
 - Set custom clinic hours for a specific date
+- Broadcast a message to ALL registered patients (holiday notice, health tips, announcements)
 
 Default clinic hours:
   Morning : {settings.MORNING_START} – {settings.MORNING_END}

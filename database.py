@@ -275,6 +275,18 @@ def get_patient(client_id: int, phone: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def get_all_patient_phones(client_id: int) -> list[str]:
+    """Return list of all patient phone numbers for a clinic."""
+    db = get_db()
+    result = (
+        db.table("patients")
+        .select("phone")
+        .eq("client_id", client_id)
+        .execute()
+    )
+    return [row["phone"] for row in (result.data or [])]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CONVERSATIONS
 # ══════════════════════════════════════════════════════════════════════════════
