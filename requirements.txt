@@ -1,3 +1,4 @@
+# v8 — includes per-clinic dashboard (clinic_dashboard.py)
 # Clinic AI Agent — Python dependencies
 # Install: pip install -r requirements.txt
 
