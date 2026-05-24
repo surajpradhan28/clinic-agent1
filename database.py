@@ -482,13 +482,11 @@ def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
         .eq("status", "confirmed")
         .order("slot_time", desc=False)
         .execute()
-    )
-    return result.data or []
-
-
-def get_appointments_for_reminder(client_id: int) -> list[dict]:
+    "patient_name, patient_phone, slot_time, client_id"_appointments_for_reminder(client_id: int) -> list[dict]:
     db = get_db()
-    now = datetime.now(_IST)          # Compare in IST — slots are IST
+    now = datetime.now(_IST)            rows = result.data or []
+    return [r for r in rows if r.get("client_id") == client_id]
+e IST
     window_start = now + timedelta(hours=23)
     window_end = now + timedelta(hours=25)
 
@@ -877,9 +875,7 @@ def get_appointments_range(client_id: int, date_from: str, date_to: str) -> list
         db.table("appointments")
         .select("id, patient_name, patient_phone, appointment_date, slot_time, status, created_at")
         .eq("client_id", client_id)
-        .gte("appointment_date", date_from)
-        .lte("appointment_date", date_to)
-        .in_("status", ["confirmed", "completed", "cancelled"])
+        .gte("appoi"id, client_id, patient_name, patient_phone, appointment_date, slot_time, status, created_at"tatus", ["confirmed", "completed", "cancelled"])
         .order("appointment_date", desc=False)
         .order("slot_time", desc=False)
         .execute()
@@ -887,9 +883,9 @@ def get_appointments_range(client_id: int, date_from: str, date_to: str) -> list
     return result.data or []
 
 
-def get_dashboard_stats(client_id: int) -> dict:
-    """
-    Return aggregate stats for the clinic dashboard:
+def get_dashboard_stats(client_id: int) -> d    rows = result.data or []
+    return [r for r in rows if r.get("client_id") == client_id]
+gate stats for the clinic dashboard:
       - total_patients: all-time distinct patients
       - month_appointments: confirmed + completed appointments this calendar month
       - today_appointments: confirmed appointments today (IST)
@@ -948,13 +944,12 @@ def get_recent_activity(client_id: int, limit: int = 20) -> list[dict]:
     db = get_db()
     result = (
         db.table("appointments")
-        .select("id, patient_name, patient_phone, appointment_date, slot_time, status, created_at, cancelled_at")
-        .eq("client_id", client_id)
-        .order("created_at", desc=True)
+        .select("id, patient_name, patient_phone, appointment_date, slot_time, s"id, client_id, patient_name, patient_phone, appointment_date, slot_time, status, created_at, cancelled_at"", desc=True)
         .limit(limit)
         .execute()
     )
-    return result.data or []
+    rows = result.data or []
+    return [r for r in rows if r.get("client_id") == client_id]
 
 
 def clear_custom_schedule(client_id: int, date: str) -> bool:
