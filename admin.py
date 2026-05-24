@@ -22,6 +22,7 @@ Web dashboard:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date, timedelta
 from typing import Optional
 
@@ -138,6 +139,18 @@ async def handle_admin_message(
         else:
             await whatsapp.send_text(phone, _renewal_template(cid), phone_id=pid)
 
+    # ── dashboard ─────────────────────────────────────────────────────────────────────────
+    elif lower.startswith("dashboard:"):
+        cid = _parse_int(cmd, "dashboard:")
+        if cid is None:
+            await whatsapp.send_text(
+                phone,
+                "❌ Usage: `dashboard: <client_id>`\nExample: `dashboard: 3`",
+                phone_id=pid,
+            )
+        else:
+            await whatsapp.send_text(phone, await _dashboard_link(cid), phone_id=pid)
+
     # ── unknown ───────────────────────────────────────────────────────────────
     else:
         await whatsapp.send_text(
@@ -164,8 +177,32 @@ def _help_text() -> str:
         "*activate: <id>* — reactivate a client\n\n"
         "💌 *renewal template: <id>*\n"
         "_Get a ready-to-forward renewal offer message_\n\n"
+        "U0001f517 *dashboard: <id>* — get clinic dashboard URL\n"
+        "_Sends the direct dashboard link for that clinic_\n\n"
         "📊 Web dashboard:\n"
         f"/admin?key=YOUR_SECRET"
+    )
+
+
+async def _dashboard_link(client_id: int) -> str:
+    """Return the per-clinic dashboard URL for this client."""
+    client = await db.get_client(client_id)
+    if client is None:
+        return f"❌ Client {client_id} not found."
+    key = client.get("dashboard_key")
+    if not key:
+        return f"❌ No dashboard key for client {client_id}. Run schema_v8 migration first."
+    name = client.get("name", f"Client {client_id}")
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "YOUR_RAILWAY_DOMAIN")
+    url = f"https://{domain}/clinic?key={key}"
+    return (
+        f"U0001f517 *{name} — Clinic Dashboard*
+
+"
+        f"{url}
+
+"
+        f"_Share this link with the clinic to view their appointment stats._"
     )
 
 
