@@ -266,6 +266,50 @@ async def _run_expiry_check() -> None:
         db_conn = db.get_db()
         today   = _date.today()
 
+        # ── A0. 14-day advance warning — renewal offer with early-bird discount ──
+        warn14_date = (today + timedelta(days=14)).isoformat()
+        subs14 = (
+            db_conn.table("subscriptions")
+            .select("id, client_id, end_date")
+            .eq("status", "active")
+            .eq("end_date", warn14_date)
+            .eq("warning_14d_sent", False)
+            .execute()
+        ).data or []
+
+        for sub in subs14:
+            client = db.get_client_by_id(sub["client_id"])
+            if not client:
+                continue
+            doctor_phone = (client.get("contact_phone") or "").strip()
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
+            db_settings  = db.get_all_clinic_settings(sub["client_id"])
+            doctor_name  = (db_settings.get("doctor_name") or client.get("doctor_name") or "Doctor").split()[-1]
+            if not doctor_phone:
+                continue
+            end_date_str = str(sub["end_date"])[:10]
+            # Early-renewal offer: renew within 7 days to get 1 free month
+            early_deadline = (today + timedelta(days=7)).strftime("%d %B %Y")
+            msg = (
+                f"🌟 *Time to Renew Your Clinic AI Agent!*\n\n"
+                f"Hi Dr. {doctor_name}! 👋\n\n"
+                f"Your subscription expires in *14 days* (on {end_date_str}).\n\n"
+                f"✨ *Early Renewal Offer* — Renew before *{early_deadline}* and get *1 month FREE* added to your next plan!\n\n"
+                f"Here's what you keep when you renew:\n"
+                f"📲 24/7 WhatsApp appointment booking\n"
+                f"⏰ Automated 24h + 1h reminders\n"
+                f"📋 Daily schedule to your WhatsApp\n"
+                f"📢 Patient broadcast messages\n"
+                f"📊 Follow-up & recovery tracking\n\n"
+                f"Reply *RENEW* or contact your account manager to lock in the early offer. 🙏"
+            )
+            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
+            if success:
+                db_conn.table("subscriptions").update({"warning_14d_sent": True})\
+                    .eq("id", sub["id"]).execute()
+                logger.info("[Scheduler] 14-day renewal offer sent to client=%s", sub["client_id"])
+
         # ── A. 7-day advance warning ──────────────────────────────────────────
         warn7_date = (today + timedelta(days=7)).isoformat()
         subs7 = (
@@ -286,13 +330,14 @@ async def _run_expiry_check() -> None:
             client_token = client.get("whatsapp_token") or None
             if not doctor_phone:
                 continue
+            db_settings_7  = db.get_all_clinic_settings(sub["client_id"])
+            doctor_name_7  = (db_settings_7.get("doctor_name") or client.get("doctor_name") or "Doctor").split()[-1]
             msg = (
-                f"📅 *Subscription Renewal Reminder*\n\n"
-                f"Your Clinic AI Agent subscription expires in *7 days* "
-                f"(on {sub['end_date']}).\n\n"
-                f"After expiry you'll have a {settings.GRACE_PERIOD_DAYS}-day grace period, "
-                f"then service pauses.\n\n"
-                f"Please renew now to avoid interruption. Contact support. 🙏"
+                f"⚠️ *Last Chance — Renew in 7 Days!*\n\n"
+                f"Hi Dr. {doctor_name_7}! Your Clinic AI Agent subscription expires on *{sub['end_date']}*.\n\n"
+                f"⏳ After expiry you get a *{settings.GRACE_PERIOD_DAYS}-day grace period*, "
+                f"then your patients *won't be able to book* via WhatsApp.\n\n"
+                f"👉 Reply *RENEW* or contact your account manager today to keep the bot running without interruption. 🙏"
             )
             success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
             if success:

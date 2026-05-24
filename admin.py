@@ -123,6 +123,21 @@ async def handle_admin_message(
     elif lower.startswith("new client:"):
         await _handle_new_client(phone, cmd, pid)
 
+    # ── renewal template: <client_id>  (or shorthand: renewal: <id>) ─────────
+    elif lower.startswith("renewal template:") or lower.startswith("renewal:"):
+        prefix = "renewal template:" if lower.startswith("renewal template:") else "renewal:"
+        cid = _parse_int(cmd, prefix)
+        if cid is None:
+            await whatsapp.send_text(
+                phone,
+                "❌ Usage: `renewal template: <client_id>`\n"
+                "Example: `renewal template: 3`\n\n"
+                "Sends you a ready-to-forward renewal offer for that client.",
+                phone_id=pid,
+            )
+        else:
+            await whatsapp.send_text(phone, _renewal_template(cid), phone_id=pid)
+
     # ── unknown ───────────────────────────────────────────────────────────────
     else:
         await whatsapp.send_text(
@@ -147,9 +162,86 @@ def _help_text() -> str:
         "_method: cash / upi / bank / card_\n\n"
         "*suspend: <id>* — suspend a client\n"
         "*activate: <id>* — reactivate a client\n\n"
+        "💌 *renewal template: <id>*\n"
+        "_Get a ready-to-forward renewal offer message_\n\n"
         "📊 Web dashboard:\n"
         f"/admin?key=YOUR_SECRET"
     )
+
+
+def _renewal_template(client_id: int) -> str:
+    """
+    Generate a ready-to-forward personalised renewal offer message for a client.
+    The admin receives this message and can forward it directly to the doctor's
+    WhatsApp, or use it as a script for a phone call.
+    """
+    client = db.get_client_by_id(client_id)
+    if not client:
+        return f"❌ Client {client_id} not found."
+
+    db_settings  = db.get_all_clinic_settings(client_id)
+    doctor_name  = (db_settings.get("doctor_name") or client.get("doctor_name") or "Doctor")
+    first_name   = doctor_name.split()[-1]
+    clinic_name  = db_settings.get("clinic_name") or client.get("name", "your clinic")
+    plan         = (client.get("plan") or "starter").lower()
+    status       = client.get("status", "")
+
+    # Fetch latest subscription for expiry date
+    subs = db.get_db().table("subscriptions").select("end_date, start_date") \
+        .eq("client_id", client_id).order("end_date", desc=True).limit(1).execute().data or []
+    sub      = subs[0] if subs else {}
+    end_date = str(sub.get("end_date", ""))[:10] or "—"
+
+    # Plan details for upgrade nudge
+    plan_details = {
+        "starter": ("Starter", "₹1,999/year", "Pro", "₹4,999/year", "cancellation + reschedule for patients"),
+        "pro":     ("Pro",     "₹4,999/year", "Suite", "₹7,999/year", "broadcast messages to all patients"),
+        "suite":   ("Suite",   "₹7,999/year", None,    None,           None),
+    }
+    cur_plan, cur_price, up_plan, up_price, up_feature = plan_details.get(plan, plan_details["starter"])
+
+    upgrade_line = ""
+    if up_plan:
+        upgrade_line = (
+            f"\n💡 *Upgrade to {up_plan} ({up_price}/year)* and also unlock "
+            f"{up_feature}!\n"
+        )
+
+    status_note = ""
+    if status in ("grace", "expired"):
+        status_note = (
+            f"\n⚠️ _Note: Subscription is currently in {status} period. "
+            f"Activate immediately to restore full service._\n"
+        )
+
+    # Divider for admin context
+    divider = "─" * 30
+
+    template = (
+        f"📋 *Renewal Template — {client['name']} [ID: {client_id}]*\n"
+        f"Plan: {cur_plan} | Expires: {end_date} | Status: {status}\n"
+        f"{divider}\n"
+        f"👇 *FORWARD THIS TO DR. {first_name.upper()}:*\n"
+        f"{divider}\n\n"
+        f"🌟 *Renew Your Clinic AI Agent — Special Offer!*\n\n"
+        f"Hi Dr. {first_name}! 👋\n\n"
+        f"Your *{cur_plan} plan* for *{clinic_name}* is due for renewal "
+        f"(expires *{end_date}*).\n\n"
+        f"✨ *Renew now and get 1 month FREE!*\n"
+        f"Just renew before your expiry date to lock in this offer.\n"
+        f"{upgrade_line}"
+        f"{status_note}\n"
+        f"✅ What you keep with renewal:\n"
+        f"• 24/7 WhatsApp appointment booking\n"
+        f"• 24-hour + 1-hour patient reminders\n"
+        f"• Daily morning schedule to your WhatsApp\n"
+        f"• 7-day follow-up messages\n"
+        f"• Patient broadcast announcements\n\n"
+        f"💳 Renew at {cur_price}/year via UPI / Bank Transfer.\n\n"
+        f"Reply *YES* to renew, or call us at [YOUR NUMBER]. 🙏\n"
+        f"_{divider}_"
+    )
+    return template
 
 
 def _list_clients() -> str:
