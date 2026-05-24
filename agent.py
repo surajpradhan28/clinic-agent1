@@ -113,11 +113,15 @@ _TOOLS_BASE = [
         "type": "function",
         "function": {
             "name": "create_appointment",
-            "description": "Book an appointment after the patient confirms a specific slot.",
+            "description": (
+                "Book an appointment after the patient confirms a specific slot. "
+                "patient_name MUST be the patient's full name (first + last). "
+                "If only a single name was given, ask for the full name before calling this."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "patient_name": {"type": "string"},
+                    "patient_name": {"type": "string", "description": "Full name of the patient (first and last name)"},
                     "date":         {"type": "string", "description": "YYYY-MM-DD"},
                     "slot_time":    {"type": "string", "description": "HH:MM"},
                 },
@@ -755,7 +759,7 @@ Your job is to help patients:
 Guidelines:
 - Be warm, concise, and helpful. Use a friendly Indian conversational tone.
 - Keep replies short — max 3-4 sentences unless listing slots.
-- Always ask for the patient's name if you don't have it.
+- Always ask for the patient's **full name** (first and last name) before booking. Do not proceed with booking using a single name like "Raj" — politely ask "Could you please share your full name?" and wait for the complete name.
 - When a patient wants to book, use check_available_slots, then present the slots.
 - After the patient selects a slot, use create_appointment to confirm.
 - After booking, confirm the date, time, and clinic address. A separate confirmation card will also be sent.
