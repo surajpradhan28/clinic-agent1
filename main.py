@@ -8,8 +8,9 @@ Endpoints:
   GET  /webhook                   → Meta webhook verification (one-time setup)
   POST /webhook                   → Incoming WhatsApp messages
   GET  /health                    → Detailed health check (DB + config)
-  GET  /admin?key=<SECRET>        → Web admin dashboard
+  GET  /admin?key=<SECRET>        → Super-admin web dashboard (Arun only)
   POST /admin/action?key=<SECRET> → Dashboard actions (suspend/activate/payment/new_client)
+  GET  /clinic?key=<dashboard_key>→ Per-clinic read-only dashboard (doctors)
 
 Routing on every incoming message:
   0. If sender is ADMIN_PHONE → super-admin command handler (admin.py)
@@ -39,6 +40,7 @@ import database as db
 import whatsapp
 import scheduler as sched
 import admin as admin_handler
+import clinic_dashboard
 from config import settings
 from flows.booking import handle_booking_flow
 from flows.followup import handle_followup_response, is_followup_response
@@ -265,6 +267,33 @@ async def admin_action(request: Request):
     except Exception as exc:
         logger.error("[Admin Action] Error: %s", exc, exc_info=True)
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.get("/clinic")
+async def clinic_dashboard_view(request: Request):
+    """
+    Per-clinic read-only web dashboard.
+    Each clinic doctor gets a private link:  /clinic?key=<their_dashboard_key>
+    Shows: today's schedule, upcoming week, stats, recent activity.
+    No cross-clinic data is ever exposed.
+    """
+    key = request.query_params.get("key", "").strip()
+    if not key:
+        raise HTTPException(status_code=403, detail="Missing dashboard key")
+
+    client = db.get_client_by_dashboard_key(key)
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid dashboard key")
+
+    try:
+        html_content = clinic_dashboard.render_clinic_dashboard(client)
+        return HTMLResponse(content=html_content)
+    except Exception as exc:
+        logger.error(
+            "[Clinic Dashboard] Render error for client=%s: %s",
+            client.get("id"), exc, exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Dashboard error")
 
 
 @app.get("/health")

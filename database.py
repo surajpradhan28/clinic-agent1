@@ -77,6 +77,25 @@ def get_client_by_id(client_id: int) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def get_client_by_dashboard_key(key: str) -> dict | None:
+    """
+    Look up a client by their per-clinic dashboard key.
+    Used by GET /clinic?key=<key> to authenticate and scope the dashboard.
+    Returns None if the key is blank or doesn't match any client.
+    """
+    if not key:
+        return None
+    db = get_db()
+    result = (
+        db.table("clients")
+        .select("*")
+        .eq("dashboard_key", key)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def create_clinic_client(
     name: str,
     doctor_name: str,
@@ -424,15 +443,19 @@ def get_upcoming_appointment(client_id: int, phone: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
-def cancel_appointment(appt_id: int) -> None:
+def cancel_appointment(appt_id: int, client_id: int | None = None) -> None:
+    """Cancel an appointment.  Pass client_id to enforce tenant ownership at DB level."""
     db = get_db()
-    db.table("appointments").update(
+    query = db.table("appointments").update(
         {"status": "cancelled", "cancelled_at": _now()}
-    ).eq("id", appt_id).execute()
+    ).eq("id", appt_id)
+    if client_id is not None:
+        query = query.eq("client_id", client_id)
+    query.execute()
     db.table("followups").update(
         {"status": "cancelled"}
     ).eq("appointment_id", appt_id).eq("status", "pending").execute()
-    logger.info("Appointment %s cancelled", appt_id)
+    logger.info("Appointment %s cancelled (client=%s)", appt_id, client_id)
 
 
 def reschedule_appointment(
@@ -443,7 +466,7 @@ def reschedule_appointment(
     new_date: str,
     new_slot: str,
 ) -> dict:
-    cancel_appointment(old_appt_id)
+    cancel_appointment(old_appt_id, client_id=client_id)
     new_appt = create_appointment(client_id, phone, patient_name, new_date, new_slot)
     logger.info("Rescheduled appt %s → new appt %s on %s %s", old_appt_id, new_appt["id"], new_date, new_slot)
     return new_appt
@@ -841,6 +864,97 @@ def get_custom_schedule(client_id: int, date: str) -> dict | None:
     except Exception as exc:
         logger.warning("get_custom_schedule(%s, %s) error: %s", client_id, date, exc)
         return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLINIC DASHBOARD QUERIES  (read-only, per-client)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_appointments_range(client_id: int, date_from: str, date_to: str) -> list[dict]:
+    """Return confirmed appointments between two dates (inclusive) for the dashboard."""
+    db = get_db()
+    result = (
+        db.table("appointments")
+        .select("id, patient_name, patient_phone, appointment_date, slot_time, status, created_at")
+        .eq("client_id", client_id)
+        .gte("appointment_date", date_from)
+        .lte("appointment_date", date_to)
+        .in_("status", ["confirmed", "completed", "cancelled"])
+        .order("appointment_date", desc=False)
+        .order("slot_time", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_dashboard_stats(client_id: int) -> dict:
+    """
+    Return aggregate stats for the clinic dashboard:
+      - total_patients: all-time distinct patients
+      - month_appointments: confirmed + completed appointments this calendar month
+      - today_appointments: confirmed appointments today (IST)
+      - pending_followups: follow-ups in 'pending' or 'sent' state
+    """
+    db = get_db()
+    today_ist = datetime.now(_IST).strftime("%Y-%m-%d")
+    month_start = datetime.now(_IST).strftime("%Y-%m-01")
+
+    # Total patients
+    pat = db.table("patients").select("id", count="exact").eq("client_id", client_id).execute()
+    total_patients = pat.count if pat.count is not None else len(pat.data or [])
+
+    # This month's bookings (confirmed + completed)
+    mo = (
+        db.table("appointments")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .gte("appointment_date", month_start)
+        .in_("status", ["confirmed", "completed"])
+        .execute()
+    )
+    month_appointments = mo.count if mo.count is not None else len(mo.data or [])
+
+    # Today's confirmed
+    tod = (
+        db.table("appointments")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .eq("appointment_date", today_ist)
+        .eq("status", "confirmed")
+        .execute()
+    )
+    today_appointments = tod.count if tod.count is not None else len(tod.data or [])
+
+    # Pending follow-ups
+    fu = (
+        db.table("followups")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .in_("status", ["pending", "sent"])
+        .execute()
+    )
+    pending_followups = fu.count if fu.count is not None else len(fu.data or [])
+
+    return {
+        "total_patients": total_patients,
+        "month_appointments": month_appointments,
+        "today_appointments": today_appointments,
+        "pending_followups": pending_followups,
+    }
+
+
+def get_recent_activity(client_id: int, limit: int = 20) -> list[dict]:
+    """Return the most recent appointments (any status) for the activity feed."""
+    db = get_db()
+    result = (
+        db.table("appointments")
+        .select("id, patient_name, patient_phone, appointment_date, slot_time, status, created_at, cancelled_at")
+        .eq("client_id", client_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
 
 
 def clear_custom_schedule(client_id: int, date: str) -> bool:
