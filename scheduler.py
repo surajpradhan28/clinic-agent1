@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+# Indian Standard Time constant — used wherever local clinic date/time is needed
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -194,8 +197,10 @@ async def _run_daily_doctor_schedule() -> None:
     Falls back to env DOCTOR_PHONE for the first client (legacy).
     """
     logger.info("[Scheduler] Running daily doctor schedule job…")
-    today_str     = date.today().strftime("%Y-%m-%d")
-    today_display = date.today().strftime("%d %B %Y (%A)")
+    # Use IST date — Railway runs in UTC, but clinic day boundaries are IST
+    today_ist     = datetime.now(_IST)
+    today_str     = today_ist.strftime("%Y-%m-%d")
+    today_display = today_ist.strftime("%d %B %Y (%A)")
 
     try:
         clients = db.get_all_active_clients()

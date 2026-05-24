@@ -15,6 +15,9 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+
+# Indian Standard Time — slot times and "today" shown to patients/doctor are IST
+_IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -707,7 +710,7 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
 # ── System prompts ────────────────────────────────────────────────────────────
 
 def _build_system_prompt(client: dict) -> str:
-    today     = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
+    today     = datetime.now(_IST).strftime("%A, %d %B %Y")   # IST date for India
     client_id = client["id"]
     plan      = client.get("plan", "starter").lower()
 
@@ -764,7 +767,7 @@ Guidelines:
 
 
 def _build_doctor_prompt(client: dict) -> str:
-    today     = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
+    today     = datetime.now(_IST).strftime("%A, %d %B %Y")   # IST date for India
     client_id = client["id"]
     info      = _get_clinic_info(client_id)
     off_days  = ", ".join(settings.WEEKLY_OFF_DAYS) if settings.WEEKLY_OFF_DAYS else "None"

@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+
+# Indian Standard Time — all appointment slot times are stored in IST
+_IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Any, Optional
 
 from supabase import create_client, Client
@@ -405,7 +408,7 @@ def get_booked_slots(client_id: int, date: str) -> list[str]:
 
 def get_upcoming_appointment(client_id: int, phone: str) -> dict | None:
     db = get_db()
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(_IST).strftime("%Y-%m-%d")  # Use IST date
     result = (
         db.table("appointments")
         .select("*")
@@ -462,7 +465,7 @@ def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
 
 def get_appointments_for_reminder(client_id: int) -> list[dict]:
     db = get_db()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(_IST)          # Compare in IST — slots are IST
     window_start = now + timedelta(hours=23)
     window_end = now + timedelta(hours=25)
 
@@ -490,7 +493,7 @@ def mark_reminder_sent(appt_id: int) -> None:
 def get_appointments_for_1h_reminder(client_id: int) -> list[dict]:
     """Return confirmed appointments whose slot is 50–70 min from now and 1h reminder not sent."""
     db = get_db()
-    now          = datetime.now(timezone.utc)
+    now          = datetime.now(_IST)  # Compare in IST — slots are IST
     window_start = now + timedelta(minutes=50)
     window_end   = now + timedelta(minutes=70)
 
@@ -861,9 +864,13 @@ def _now() -> str:
 
 
 def _parse_appt_datetime(appt: dict) -> datetime | None:
+    """Parse appointment date+slot into an IST-aware datetime.
+    Slot times are stored as local India time (IST = UTC+5:30).
+    Attaching _IST makes comparisons with datetime.now(_IST) correct.
+    """
     try:
         return datetime.strptime(
             f"{appt['appointment_date']} {appt['slot_time']}", "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=timezone.utc)
+        ).replace(tzinfo=_IST)
     except Exception:
         return None

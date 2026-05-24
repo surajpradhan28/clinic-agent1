@@ -14,6 +14,10 @@ class Settings:
     WHATSAPP_TOKEN: str = os.getenv("WHATSAPP_TOKEN", "")
     WHATSAPP_PHONE_ID: str = os.getenv("WHATSAPP_PHONE_ID", "")
     WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", "clinic_secret_abc")
+    # App Secret from Meta Developer Console → Your App → Settings → Basic.
+    # Used to verify X-Hub-Signature-256 on incoming webhooks.
+    # Leave blank to skip verification (not recommended for production).
+    WHATSAPP_APP_SECRET: str = os.getenv("WHATSAPP_APP_SECRET", "")
 
     # ── OpenAI ────────────────────────────────────────────────────────────────
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -60,7 +64,9 @@ class Settings:
 
     # ── Doctor WhatsApp (Suite plan — daily schedule) ─────────────────────────
     DOCTOR_PHONE: str = os.getenv("DOCTOR_PHONE", "")   # e.g. "919876543210"
-    DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "7"))  # 7 AM UTC
+    # Default 2 UTC = 7:30 AM IST — morning schedule arrives before clinic opens.
+    # Set DAILY_SCHEDULE_HOUR=1 for 6:30 AM IST or =3 for 8:30 AM IST.
+    DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "2"))  # 2 UTC = 7:30 AM IST
 
     # ── Recurring schedule rules ──────────────────────────────────────────────
     # Comma-separated day names when clinic is closed (e.g. "Sunday" or "Saturday,Sunday")

@@ -24,6 +24,8 @@ Routing on every incoming message:
 from __future__ import annotations
 
 import collections
+import hashlib
+import hmac
 import logging
 import sys
 import time
@@ -98,6 +100,48 @@ def _is_rate_limited(phone: str) -> bool:
         return True
     dq.append(now)
     return False
+
+
+# ── WhatsApp webhook signature verification ───────────────────────────────────
+# Meta signs every webhook POST body with HMAC-SHA256 using the App Secret.
+# The signature is in the X-Hub-Signature-256 header as "sha256=<hex>".
+# We verify it to reject forged/spoofed requests before any processing.
+# If WHATSAPP_APP_SECRET is not configured, verification is skipped (logs a
+# warning) — set it in production for security.
+
+async def _verify_webhook_signature(request: Request, body: bytes) -> bool:
+    """
+    Return True if the request body matches the Meta HMAC-SHA256 signature.
+    Always returns True if WHATSAPP_APP_SECRET is not configured (with a warning).
+    """
+    app_secret = settings.WHATSAPP_APP_SECRET
+    if not app_secret:
+        logger.warning(
+            "⚠️  WHATSAPP_APP_SECRET not set — webhook signature NOT verified. "
+            "Set this in Railway env vars for production security."
+        )
+        return True
+
+    signature_header = request.headers.get("X-Hub-Signature-256", "")
+    if not signature_header:
+        logger.warning("🚫 Webhook request missing X-Hub-Signature-256 header — rejected")
+        return False
+
+    expected_sig = "sha256=" + hmac.new(
+        app_secret.encode("utf-8"),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(signature_header, expected_sig):
+        logger.warning(
+            "🚫 Webhook signature mismatch (got=%s, expected=%s…) — rejected",
+            signature_header[:20],
+            expected_sig[:20],
+        )
+        return False
+
+    return True
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -268,10 +312,23 @@ async def receive_message(request: Request):
       - Identifies clinic by phone_number_id (which of your registered numbers was messaged)
       - Passes resolved client dict to all downstream flows
     """
+    # ── Read raw body first (needed for HMAC verification) ────────────────────
     try:
-        body = await request.json()
+        raw_body = await request.body()
     except Exception:
-        logger.error("Failed to parse webhook body")
+        logger.error("Failed to read webhook body")
+        return JSONResponse({"status": "error"}, status_code=400)
+
+    # ── Verify Meta webhook signature ─────────────────────────────────────────
+    if not await _verify_webhook_signature(request, raw_body):
+        return JSONResponse({"status": "forbidden"}, status_code=403)
+
+    # ── Parse JSON ────────────────────────────────────────────────────────────
+    try:
+        import json as _json
+        body = _json.loads(raw_body)
+    except Exception:
+        logger.error("Failed to parse webhook body as JSON")
         return JSONResponse({"status": "error"}, status_code=400)
 
     phone: str | None = None
