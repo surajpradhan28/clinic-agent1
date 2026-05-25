@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp Templates — Clinic AI Agent Setup Guide</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 24px 16px;
+  }
+  .page-header {
+    max-width: 860px;
+    margin: 0 auto 32px;
+  }
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #128C7E;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .page-header p {
+    margin-top: 8px;
+    color: #555;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .steps-bar {
+    max-width: 860px;
+    margin: 0 auto 36px;
+    display: flex;
+    gap: 12px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .step {
+    flex: 1;
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    line-height: 1.4;
+  }
+  .step .num {
+    display: inline-block;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #128C7E;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    line-height: 28px;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .step .label { font-weight: 600; color: #333; display: block; }
+  .step-divider {
+    width: 1px; background: #e0e0e0; flex-shrink: 0; margin: 4px 0;
+  }
+  .section-label {
+    max-width: 860px;
+    margin: 0 auto 12px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #888;
+  }
+  .card {
+    max-width: 860px;
+    margin: 0 auto 20px;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-header-left { flex: 1; }
+  .template-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #128C7E;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    margin-bottom: 4px;
+  }
+  .template-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .badge-utility { background: #e8f5e9; color: #2e7d32; }
+  .badge-marketing { background: #fff3e0; color: #e65100; }
+  .badge-lang { background: #e3f2fd; color: #1565c0; }
+  .badge-trigger { background: #f3e5f5; color: #6a1b9a; }
+  .card-body { padding: 20px 24px; }
+  .preview-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #999;
+    margin-bottom: 10px;
+  }
+  .whatsapp-bubble {
+    background: #DCF8C6;
+    border-radius: 12px 12px 12px 0;
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #111;
+    max-width: 420px;
+    position: relative;
+    white-space: pre-line;
+  }
+  .whatsapp-bubble::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    bottom: 0;
+    border: 8px solid transparent;
+    border-right-color: #DCF8C6;
+    border-bottom: none;
+  }
+  .whatsapp-bubble .param {
+    background: rgba(18,140,126,0.15);
+    color: #0b6b63;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  .whatsapp-time {
+    text-align: right;
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+  }
+  .params-section {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid #f4f4f4;
+  }
+  .params-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #aaa;
+    margin-bottom: 10px;
+  }
+  .param-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    align-items: baseline;
+    font-size: 13.5px;
+  }
+  .param-num {
+    color: white;
+    background: #128C7E;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-family: monospace;
+  }
+  .param-name { font-weight: 600; color: #333; min-width: 120px; }
+  .param-example { color: #888; font-style: italic; }
+  .copy-section {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid #f4f4f4;
+  }
+  .copy-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #aaa;
+    margin-bottom: 8px;
+  }
+  .copy-box {
+    background: #f7f9fc;
+    border: 1px solid #e0e8f0;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 13px;
+    color: #2c3e50;
+    line-height: 1.6;
+    white-space: pre-line;
+    position: relative;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: #128C7E;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: #0a6b63; }
+  .copy-btn:active { background: #075e54; }
+  .footer-card {
+    max-width: 860px;
+    margin: 32px auto 0;
+    background: linear-gradient(135deg, #128C7E 0%, #075e54 100%);
+    border-radius: 14px;
+    padding: 28px 32px;
+    color: white;
+  }
+  .footer-card h3 { font-size: 18px; margin-bottom: 16px; }
+  .checklist { list-style: none; }
+  .checklist li {
+    padding: 5px 0;
+    font-size: 14px;
+    opacity: 0.92;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .checklist li::before { content: "✓"; font-weight: 700; font-size: 16px; }
+  .env-card {
+    max-width: 860px;
+    margin: 20px auto 0;
+    background: white;
+    border-radius: 14px;
+    padding: 24px 28px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .env-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: #333; }
+  .env-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .env-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: #f8f8f8;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    border-bottom: 1px solid #eee;
+  }
+  .env-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f4f4f4;
+    vertical-align: top;
+  }
+  .env-table tr:last-child td { border-bottom: none; }
+  .env-key {
+    font-family: monospace;
+    color: #c7254e;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .env-example { color: #888; font-style: italic; font-size: 12.5px; }
+  @media print {
+    body { background: white; padding: 0; }
+    .copy-btn { display: none; }
+    .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>💬 WhatsApp Templates Setup Guide</h1>
+  <p>Copy these 6 templates into <strong>Meta Business Manager → WhatsApp → Message Templates</strong>.
+  Once approved (~24–48h), proactive reminders and invoices will deliver reliably to patients
+  regardless of the 24-hour session window.</p>
+</div>
+
+<!-- Steps -->
+<div class="steps-bar">
+  <div class="step">
+    <div class="num">1</div>
+    <span class="label">Open Meta BM</span>
+    business.facebook.com
+  </div>
+  <div class="step-divider"></div>
+  <div class="step">
+    <div class="num">2</div>
+    <span class="label">Go to Templates</span>
+    WhatsApp → Message Templates
+  </div>
+  <div class="step-divider"></div>
+  <div class="step">
+    <div class="num">3</div>
+    <span class="label">Create Template</span>
+    Paste body text below
+  </div>
+  <div class="step-divider"></div>
+  <div class="step">
+    <div class="num">4</div>
+    <span class="label">Submit for Review</span>
+    Approved in 24–48h
+  </div>
+  <div class="step-divider"></div>
+  <div class="step">
+    <div class="num">5</div>
+    <span class="label">Go Live</span>
+    Status → Active ✓
+  </div>
+</div>
+
+<!-- ── Template 1 ─────────────────────────────────────────── -->
+<div class="section-label">Template 1 of 6 — Appointment Reminders</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_appt_reminder_24h</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: 24h before appointment</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview</div>
+    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 👋
+
+Your appointment at <span class="param">{{2}}</span> is confirmed for *<span class="param">{{3}}</span>* at *<span class="param">{{4}}</span>*.
+
+📍 <span class="param">{{5}}</span>
+
+Please arrive 5 minutes early. Reply *CANCEL* to cancel.
+    <div class="whatsapp-time">✓✓ 10:00 AM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Priya"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
+      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "26 May 2025"</span></div>
+      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "10:30 AM"</span></div>
+      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t1">Hi {{1}} 👋
+
+Your appointment at {{2}} is confirmed for *{{3}}* at *{{4}}*.
+
+📍 {{5}}
+
+Please arrive 5 minutes early. Reply *CANCEL* to cancel.<button class="copy-btn" onclick="copyText('t1', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template 2 ─────────────────────────────────────────── -->
+<div class="section-label">Template 2 of 6 — Appointment Reminders</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_appt_reminder_1h</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: 1h before appointment</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview</div>
+    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> ⏰
+
+Friendly reminder — your appointment at *<span class="param">{{2}}</span>* is in *1 hour* (<span class="param">{{3}}</span> at <span class="param">{{4}}</span>).
+
+📍 <span class="param">{{5}}</span>
+
+See you soon!
+    <div class="whatsapp-time">✓✓ 9:00 AM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Rahul"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
+      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "26 May 2025"</span></div>
+      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "10:00 AM"</span></div>
+      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t2">Hi {{1}} ⏰
+
+Friendly reminder — your appointment at *{{2}}* is in *1 hour* ({{3}} at {{4}}).
+
+📍 {{5}}
+
+See you soon!<button class="copy-btn" onclick="copyText('t2', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template 3 ─────────────────────────────────────────── -->
+<div class="section-label">Template 3 of 6 — Post-Visit Follow-Up</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_followup_checkup</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: 2 days after appointment</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview</div>
+    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 🙏
+
+Hope you're feeling better! Dr. <span class="param">{{2}}</span> wanted to check in after your recent visit.
+
+If you have any questions about your treatment or need to book a follow-up, just reply here and we'll help you right away.
+
+Take care! 💊
+    <div class="whatsapp-time">✓✓ 11:00 AM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Anita"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Doctor name</span><span class="param-example">e.g. "Sharma"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t3">Hi {{1}} 🙏
+
+Hope you're feeling better! Dr. {{2}} wanted to check in after your recent visit.
+
+If you have any questions about your treatment or need to book a follow-up, just reply here and we'll help you right away.
+
+Take care! 💊<button class="copy-btn" onclick="copyText('t3', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template 4 ─────────────────────────────────────────── -->
+<div class="section-label">Template 4 of 6 — Billing & Invoices</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_invoice_monthly</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: 1st of every month (8:30 AM IST)</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview</div>
+    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 👋
+
+Your invoice *#<span class="param">{{2}}</span>* for ₹<span class="param">{{3}}</span> is ready.
+
+📅 Due date: *<span class="param">{{4}}</span>*
+
+View & pay online 👇
+<span class="param">{{5}}</span>
+
+Thank you for using Clinic AI Agent! 🙏
+    <div class="whatsapp-time">✓✓ 8:30 AM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Invoice number</span><span class="param-example">e.g. "INV-2025-001"</span></div>
+      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Amount</span><span class="param-example">e.g. "999"</span></div>
+      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Due date</span><span class="param-example">e.g. "05 Jun 2025"</span></div>
+      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Invoice URL</span><span class="param-example">e.g. "https://yourdomain.com/invoice/abc123"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t4">Hi {{1}} 👋
+
+Your invoice *#{{2}}* for ₹{{3}} is ready.
+
+📅 Due date: *{{4}}*
+
+View & pay online 👇
+{{5}}
+
+Thank you for using Clinic AI Agent! 🙏<button class="copy-btn" onclick="copyText('t4', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template 5 ─────────────────────────────────────────── -->
+<div class="section-label">Template 5 of 6 — Waitlist</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_waitlist_booked</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: Slot opens from cancellation</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview</div>
+    <div class="whatsapp-bubble">Great news, <span class="param">{{1}}</span>! 🎉
+
+A slot just opened up at *<span class="param">{{2}}</span>* and we've automatically booked it for you.
+
+📅 *<span class="param">{{3}}</span>* at *<span class="param">{{4}}</span>*
+📍 <span class="param">{{5}}</span>
+
+See you there! Reply *CANCEL* if you can't make it.
+    <div class="whatsapp-time">✓✓ 3:45 PM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Vikram"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
+      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "27 May 2025"</span></div>
+      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "11:00 AM"</span></div>
+      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t5">Great news, {{1}}! 🎉
+
+A slot just opened up at *{{2}}* and we've automatically booked it for you.
+
+📅 *{{3}}* at *{{4}}*
+📍 {{5}}
+
+See you there! Reply *CANCEL* if you can't make it.<button class="copy-btn" onclick="copyText('t5', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template 6 ─────────────────────────────────────────── -->
+<div class="section-label">Template 6 of 6 — New Patient Intake</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">
+      <div class="template-name">clinic_intake_preview</div>
+      <div class="template-meta">
+        <span class="badge badge-utility">Utility</span>
+        <span class="badge badge-lang">English</span>
+        <span class="badge badge-trigger">Trigger: 30 min before new patient appointment (to doctor)</span>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="preview-label">Preview (sent to the clinic/doctor's WhatsApp)</div>
+    <div class="whatsapp-bubble">🩺 *New Patient Intake — <span class="param">{{1}}</span>*
+
+Appointment in 30 minutes.
+
+👤 Patient: <span class="param">{{2}}</span>
+📞 Phone: <span class="param">{{3}}</span>
+🎂 Age: <span class="param">{{4}}</span>
+⚧ Gender: <span class="param">{{5}}</span>
+📋 Chief Complaint: <span class="param">{{6}}</span>
+    <div class="whatsapp-time">✓✓ 9:30 AM</div></div>
+
+    <div class="params-section">
+      <div class="params-label">Parameters (in order)</div>
+      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Slot time</span><span class="param-example">e.g. "10:00 AM"</span></div>
+      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Anjali Mehta"</span></div>
+      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Patient phone</span><span class="param-example">e.g. "919876543210"</span></div>
+      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Age</span><span class="param-example">e.g. "34"</span></div>
+      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Gender</span><span class="param-example">e.g. "Female"</span></div>
+      <div class="param-row"><span class="param-num">{{6}}</span><span class="param-name">Chief complaint</span><span class="param-example">e.g. "Chest pain since 2 days"</span></div>
+    </div>
+
+    <div class="copy-section">
+      <div class="copy-label">Body text to paste in Meta BM</div>
+      <div class="copy-box" id="t6">🩺 *New Patient Intake — {{1}}*
+
+Appointment in 30 minutes.
+
+👤 Patient: {{2}}
+📞 Phone: {{3}}
+🎂 Age: {{4}}
+⚧ Gender: {{5}}
+📋 Chief Complaint: {{6}}<button class="copy-btn" onclick="copyText('t6', this)">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Railway Env Vars -->
+<div class="env-card">
+  <h3>🚂 New Railway Environment Variables</h3>
+  <table class="env-table">
+    <thead>
+      <tr><th>Variable</th><th>Example Value</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="env-key">SERVER_URL</span></td>
+        <td><span class="env-example">https://clinic-agent-production.up.railway.app</span></td>
+        <td>Used in invoice URLs sent via WhatsApp</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">INVOICE_UPI_ID</span></td>
+        <td><span class="env-example">yourname@upi</span></td>
+        <td>Shown on invoice for UPI payment</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">INVOICE_BUSINESS_NAME</span></td>
+        <td><span class="env-example">Clinic AI Agent Services</span></td>
+        <td>Invoice header business name</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">INVOICE_BUSINESS_ADDRESS</span></td>
+        <td><span class="env-example">Mumbai, Maharashtra, India</span></td>
+        <td>Invoice header address</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">INVOICE_GSTIN</span></td>
+        <td><span class="env-example">27AABCS1429B1Z1</span></td>
+        <td>GSTIN (leave blank to hide)</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">PRICE_STARTER</span></td>
+        <td><span class="env-example">999</span></td>
+        <td>Monthly price for Starter plan (₹)</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">PRICE_PRO</span></td>
+        <td><span class="env-example">1999</span></td>
+        <td>Monthly price for Pro plan (₹)</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">PRICE_SUITE</span></td>
+        <td><span class="env-example">2999</span></td>
+        <td>Monthly price for Suite plan (₹)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Supabase SQL reminder -->
+<div class="env-card" style="margin-top:16px;">
+  <h3>🗄️ Supabase SQL — Run These in Order</h3>
+  <table class="env-table">
+    <thead>
+      <tr><th>File</th><th>What It Does</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="env-key">schema_v9_waitlist_intake.sql</span></td>
+        <td>waitlist + patient_intake tables, intake_preview_sent column</td>
+        <td style="color:#e65100;">⏳ Pending</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">schema_v10_invoices.sql</span></td>
+        <td>invoices table with UUID token for secure URLs</td>
+        <td style="color:#e65100;">⏳ Pending</td>
+      </tr>
+      <tr>
+        <td><span class="env-key">schema_v11_trial_signup.sql</span></td>
+        <td>trial columns, signups log table, referral codes backfill</td>
+        <td style="color:#e65100;">⏳ Pending</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Checklist footer -->
+<div class="footer-card">
+  <h3>✅ Deployment Checklist</h3>
+  <ul class="checklist">
+    <li>Create all 6 templates in Meta Business Manager (category: Utility for all)</li>
+    <li>Submit templates for review — typically approved within 24–48 hours</li>
+    <li>Set 8 new Railway environment variables listed above</li>
+    <li>Run 3 SQL schema files in Supabase SQL Editor (in order v9 → v10 → v11)</li>
+    <li>Push latest code to GitHub (git push — need fresh personal access token)</li>
+    <li>Railway auto-deploys on push — watch logs for startup errors</li>
+    <li>Test /signup page at your Railway URL: https://…/signup</li>
+    <li>Test a reminder by booking an appointment 2 minutes from now and checking scheduler logs</li>
+  </ul>
+</div>
+
+<script>
+function copyText(id, btn) {
+  const el = document.getElementById(id);
+  // Get text content excluding the button
+  const btn_el = el.querySelector('.copy-btn');
+  btn_el.remove();
+  const text = el.innerText.trim();
+  el.appendChild(btn_el);
+
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.style.background = '#25d366';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.style.background = '#128C7E';
+    }, 2000);
+  });
+}
+</script>
+</body>
+</html>
