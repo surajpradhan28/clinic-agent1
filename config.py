@@ -76,6 +76,26 @@ class Settings:
         if d.strip()
     ]
 
+    # ── Server / public URL ───────────────────────────────────────────────────
+    # Used to build invoice links sent via WhatsApp.
+    # Set to your Railway domain: e.g. "https://clinic-agent-production.up.railway.app"
+    SERVER_URL: str = os.getenv("SERVER_URL", "https://clinic-agent-production.up.railway.app")
+
+    # ── Subscription plan pricing (INR per month) ─────────────────────────────
+    PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))
+    PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
+    PRICE_SUITE:   int = int(os.getenv("PRICE_SUITE",   "2999"))
+
+    # ── Invoice settings ──────────────────────────────────────────────────────
+    # Days after 1st of month before invoice is considered overdue
+    INVOICE_DUE_DAYS: int = int(os.getenv("INVOICE_DUE_DAYS", "5"))
+    # UPI ID shown on invoice for direct payment
+    INVOICE_UPI_ID: str = os.getenv("INVOICE_UPI_ID", "yourname@upi")
+    # Business name on invoice header
+    INVOICE_BUSINESS_NAME: str = os.getenv("INVOICE_BUSINESS_NAME", "Clinic AI Agent Services")
+    INVOICE_BUSINESS_ADDRESS: str = os.getenv("INVOICE_BUSINESS_ADDRESS", "Mumbai, Maharashtra, India")
+    INVOICE_GSTIN: str = os.getenv("INVOICE_GSTIN", "")   # leave blank if not GST-registered
+
     # ── Scheduler ─────────────────────────────────────────────────────────────
     FOLLOWUP_DAYS: int = 7          # days after appointment to send follow-up
     REMINDER_HOURS_BEFORE: int = 24  # hours before appointment to send reminder

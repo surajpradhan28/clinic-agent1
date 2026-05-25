@@ -1143,6 +1143,142 @@ def mark_intake_preview_sent(appt_id: int) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# INVOICES
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _get_next_invoice_number(client_id: int, year: int, month: int) -> str:
+    """
+    Return the next sequential invoice number for this client.
+    Format: INV-{YYYY}-{MM}-{SEQ:03d}   e.g. INV-2025-06-001
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .execute()
+    )
+    seq = (result.count or 0) + 1
+    return f"INV-{year:04d}-{month:02d}-{seq:03d}"
+
+
+def create_invoice(
+    client_id: int,
+    period_start: str,   # YYYY-MM-DD (1st of month)
+    period_end: str,     # YYYY-MM-DD (last of month)
+    due_date: str,       # YYYY-MM-DD
+    amount: float,
+    plan: str,
+    currency: str = "INR",
+    notes: str = "",
+) -> dict:
+    """
+    Create an invoice record. Returns the full row including token and number.
+    Raises ValueError if an invoice already exists for this client+period.
+    """
+    db_c = get_db()
+    year  = int(period_start[:4])
+    month = int(period_start[5:7])
+    inv_number = _get_next_invoice_number(client_id, year, month)
+
+    result = (
+        db_c.table("invoices")
+        .insert({
+            "client_id":    client_id,
+            "invoice_number": inv_number,
+            "period_start": period_start,
+            "period_end":   period_end,
+            "due_date":     due_date,
+            "amount":       amount,
+            "currency":     currency,
+            "plan":         plan,
+            "notes":        notes,
+            "status":       "sent",
+        })
+        .execute()
+    )
+    row = result.data[0] if result.data else {}
+    logger.info(
+        "Invoice created: %s (client=%s, amount=%.2f %s)",
+        inv_number, client_id, amount, currency,
+    )
+    return row
+
+
+def get_invoice_by_token(token: str) -> dict | None:
+    """Fetch an invoice by its URL token. Joins client info for display."""
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .select("*, clients(clinic_name, contact_name, contact_phone, contact_email)")
+        .eq("invoice_token", token)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def get_invoices_for_client(client_id: int, limit: int = 12) -> list[dict]:
+    """Return the most recent invoices for a client (newest first)."""
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .select("*")
+        .eq("client_id", client_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def mark_invoice_paid(invoice_id: int, client_id: int) -> bool:
+    """Mark an invoice as paid. Returns True if found and updated."""
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .update({"status": "paid", "paid_at": datetime.now(_IST).isoformat()})
+        .eq("id", invoice_id)
+        .eq("client_id", client_id)
+        .execute()
+    )
+    return bool(result.data)
+
+
+def mark_overdue_invoices() -> int:
+    """
+    Mark all 'sent' invoices past their due_date as 'overdue'.
+    Returns the count of invoices updated.
+    """
+    db_c = get_db()
+    today = datetime.now(_IST).strftime("%Y-%m-%d")
+    result = (
+        db_c.table("invoices")
+        .update({"status": "overdue"})
+        .eq("status", "sent")
+        .lt("due_date", today)
+        .execute()
+    )
+    count = len(result.data or [])
+    if count:
+        logger.info("Marked %d invoice(s) as overdue", count)
+    return count
+
+
+def invoice_exists(client_id: int, period_start: str) -> bool:
+    """Return True if an invoice already exists for this client+period."""
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .eq("period_start", period_start)
+        .execute()
+    )
+    return (result.count or 0) > 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 

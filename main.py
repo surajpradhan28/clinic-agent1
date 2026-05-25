@@ -296,6 +296,253 @@ async def clinic_dashboard_view(request: Request):
         raise HTTPException(status_code=500, detail="Dashboard error")
 
 
+@app.get("/invoice/{token}")
+async def invoice_view(token: str):
+    """
+    Public invoice page served at a unique URL.
+    URL format: /invoice/<invoice_token>
+    Renders a print-ready HTML invoice with payment instructions.
+    """
+    invoice = db.get_invoice_by_token(token)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Pull client info (joined in get_invoice_by_token)
+    client_info = invoice.get("clients") or {}
+    clinic_name  = client_info.get("clinic_name")  or "Clinic"
+    contact_name = client_info.get("contact_name") or ""
+    contact_email = client_info.get("contact_email") or ""
+
+    plan_label = invoice["plan"].title()
+    plan_desc  = {
+        "starter": "Appointment booking + 24h reminders",
+        "pro":     "Booking, reminders, cancellation & reschedule",
+        "suite":   "All Pro features + daily schedule + priority support",
+    }.get(invoice["plan"].lower(), invoice["plan"])
+
+    # Format dates
+    def _fmt(d: str) -> str:
+        try:
+            from datetime import datetime as _dt
+            return _dt.strptime(d, "%Y-%m-%d").strftime("%d %B %Y")
+        except Exception:
+            return d
+
+    period_label = f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}"
+    due_str      = _fmt(invoice["due_date"])
+    issued_str   = _fmt(invoice.get("sent_at", invoice["created_at"])[:10])
+    amount_str   = f"₹{float(invoice['amount']):,.2f}"
+    status       = invoice["status"].upper()
+    status_color = {
+        "SENT":    "#1565C0",
+        "PAID":    "#2E7D32",
+        "OVERDUE": "#C62828",
+        "CANCELLED": "#757575",
+    }.get(status, "#555555")
+
+    gstin_line = (
+        f"<p style='margin:2px 0;color:#555;font-size:13px;'>GSTIN: {settings.INVOICE_GSTIN}</p>"
+        if settings.INVOICE_GSTIN else ""
+    )
+    paid_banner = ""
+    if status == "PAID":
+        paid_at = _fmt(invoice.get("paid_at", "")[:10]) if invoice.get("paid_at") else ""
+        paid_banner = f"""
+        <div style="background:#E8F5E9;border:2px solid #4CAF50;border-radius:8px;
+                    padding:12px 20px;margin-bottom:24px;text-align:center;">
+          <span style="color:#2E7D32;font-size:18px;font-weight:bold;">✅ PAID{(' — ' + paid_at) if paid_at else ''}</span>
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice {invoice['invoice_number']}</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f4f6f8;
+      color: #1a1a2e;
+      padding: 20px;
+    }}
+    .invoice-wrap {{
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    }}
+    .inv-header {{
+      background: linear-gradient(135deg, #1A3A5C 0%, #2E75B6 100%);
+      color: #fff;
+      padding: 32px 36px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+    }}
+    .inv-header h1 {{ font-size: 26px; font-weight: 700; letter-spacing: 0.5px; }}
+    .inv-header p  {{ font-size: 13px; opacity: 0.85; margin-top: 4px; }}
+    .inv-number-box {{
+      text-align: right;
+    }}
+    .inv-number-box .label {{ font-size: 11px; text-transform: uppercase; opacity:0.7; }}
+    .inv-number-box .value {{ font-size: 22px; font-weight: 700; letter-spacing: 1px; }}
+    .status-badge {{
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+      border: 1.5px solid rgba(255,255,255,0.4);
+      margin-top: 6px;
+    }}
+    .inv-body {{ padding: 32px 36px; }}
+    .meta-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 32px;
+    }}
+    @media(max-width:520px){{ .meta-grid{{ grid-template-columns:1fr; }} .inv-header{{ flex-direction:column; }} .inv-number-box{{ text-align:left; }} }}
+    .meta-box h3 {{ font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 6px; }}
+    .meta-box p  {{ font-size: 14px; color: #222; line-height: 1.6; }}
+    .line-divider {{ border: none; border-top: 1px solid #e8eaed; margin: 0 0 28px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; }}
+    thead th {{
+      background: #F3F6FB;
+      padding: 10px 14px;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #555;
+      letter-spacing: 0.8px;
+      text-align: left;
+    }}
+    thead th:last-child {{ text-align: right; }}
+    tbody td {{ padding: 14px; font-size: 14px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }}
+    tbody td:last-child {{ text-align: right; font-weight: 600; }}
+    .total-row td {{ font-size: 16px; font-weight: 700; border-bottom: none; padding-top: 16px; color: #1A3A5C; }}
+    .payment-box {{
+      background: #F0F8FF;
+      border: 1.5px solid #B3D4F0;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }}
+    .payment-box h3 {{ color: #1A3A5C; font-size: 14px; margin-bottom: 10px; }}
+    .payment-box p  {{ font-size: 13px; color: #333; line-height: 1.7; }}
+    .payment-box .upi {{ font-size: 16px; font-weight: 700; color: #1565C0; letter-spacing: 0.5px; }}
+    .footer-note {{
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      padding: 16px 0 8px;
+      border-top: 1px solid #eee;
+      line-height: 1.7;
+    }}
+    @media print {{
+      body {{ background: #fff; padding: 0; }}
+      .invoice-wrap {{ box-shadow: none; border-radius: 0; }}
+      .no-print {{ display: none !important; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="invoice-wrap">
+    <div class="inv-header">
+      <div>
+        <h1>{settings.INVOICE_BUSINESS_NAME}</h1>
+        <p>{settings.INVOICE_BUSINESS_ADDRESS}</p>
+        {gstin_line.replace("style='", "style='")}
+      </div>
+      <div class="inv-number-box">
+        <div class="label">Invoice</div>
+        <div class="value">{invoice['invoice_number']}</div>
+        <div class="status-badge">{status}</div>
+      </div>
+    </div>
+
+    <div class="inv-body">
+      {paid_banner}
+
+      <div class="meta-grid">
+        <div class="meta-box">
+          <h3>Bill To</h3>
+          <p><strong>{clinic_name}</strong><br>
+          {'Contact: ' + contact_name + '<br>' if contact_name else ''}
+          {'Email: ' + contact_email + '<br>' if contact_email else ''}
+          Plan: {plan_label}</p>
+        </div>
+        <div class="meta-box">
+          <h3>Invoice Details</h3>
+          <p>Issue Date: {issued_str}<br>
+          Billing Period: {period_label}<br>
+          <strong>Due Date: {due_str}</strong></p>
+        </div>
+      </div>
+
+      <hr class="line-divider">
+
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Period</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <strong>Clinic AI Agent — {plan_label} Plan</strong><br>
+              <span style="color:#666;font-size:13px;">{plan_desc}</span>
+            </td>
+            <td style="color:#555;font-size:13px;">{period_label}</td>
+            <td>{amount_str}</td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="2" style="text-align:right;padding-right:14px;">Total</td>
+            <td>{amount_str}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="payment-box">
+        <h3>💳 Payment Instructions</h3>
+        <p>
+          Please pay before <strong>{due_str}</strong> to avoid service interruption.<br><br>
+          UPI (Google Pay / PhonePe / Paytm):<br>
+          <span class="upi">{settings.INVOICE_UPI_ID}</span><br><br>
+          After paying, please WhatsApp the payment screenshot to confirm your renewal.
+        </p>
+      </div>
+
+      <p class="no-print" style="text-align:center;margin-bottom:20px;">
+        <button onclick="window.print()" style="
+          background:#1A3A5C;color:#fff;border:none;padding:10px 28px;
+          border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;
+        ">🖨️ Print / Save as PDF</button>
+      </p>
+
+      <div class="footer-note">
+        This is a computer-generated invoice. For queries, contact {settings.INVOICE_BUSINESS_NAME}.<br>
+        Thank you for your continued trust. 🙏
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    return HTMLResponse(content=html)
+
+
 @app.get("/health")
 async def health():
     checks = {

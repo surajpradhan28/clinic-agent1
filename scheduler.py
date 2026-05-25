@@ -260,6 +260,121 @@ async def _run_intake_previews() -> None:
         logger.error("[Scheduler] Intake preview job error: %s", exc, exc_info=True)
 
 
+# ── Job 2d: Monthly invoices on the 1st of each month ────────────────────────
+
+async def _run_monthly_invoices() -> None:
+    """
+    Runs on the 1st of every month at 8:30 AM IST.
+    For every active client:
+      1. Determine the billing period (current month).
+      2. Skip if invoice already exists for this period.
+      3. Create invoice record with unique token.
+      4. Send WhatsApp message to the clinic's contact phone with the invoice link.
+    Also marks any overdue invoices during the daily expiry check.
+    """
+    logger.info("[Scheduler] Running monthly invoice job…")
+    now      = datetime.now(_IST)
+    year     = now.year
+    month    = now.month
+
+    # Billing period = this calendar month
+    from calendar import monthrange as _mr
+    last_day = _mr(year, month)[1]
+    period_start = f"{year:04d}-{month:02d}-01"
+    period_end   = f"{year:04d}-{month:02d}-{last_day:02d}"
+    due_date     = (now + timedelta(days=settings.INVOICE_DUE_DAYS)).strftime("%Y-%m-%d")
+
+    plan_prices = {
+        "starter": settings.PRICE_STARTER,
+        "pro":     settings.PRICE_PRO,
+        "suite":   settings.PRICE_SUITE,
+    }
+
+    try:
+        clients = db.get_all_active_clients()
+        sent_count = 0
+
+        for client in clients:
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
+
+            # Contact phone for invoice delivery (prefer contact_phone, fall back to doctor phone)
+            contact_phone = (
+                (client.get("contact_phone") or "").strip()
+                or (settings.DOCTOR_PHONE if client_id == 1 else "")
+            )
+            if not contact_phone:
+                logger.warning("[Invoices] No contact phone for client=%s — skipping", client_id)
+                continue
+
+            # Skip if already generated for this period (idempotent)
+            if db.invoice_exists(client_id, period_start):
+                logger.info("[Invoices] Invoice already exists for client=%s %s — skip", client_id, period_start)
+                continue
+
+            plan   = (client.get("plan") or "starter").lower()
+            amount = float(plan_prices.get(plan, settings.PRICE_STARTER))
+
+            clinic_name = (
+                db.get_all_clinic_settings(client_id).get("clinic_name")
+                or client.get("clinic_name", "Your Clinic")
+            )
+
+            try:
+                invoice = db.create_invoice(
+                    client_id   = client_id,
+                    period_start= period_start,
+                    period_end  = period_end,
+                    due_date    = due_date,
+                    amount      = amount,
+                    plan        = plan,
+                )
+            except Exception as db_exc:
+                logger.error("[Invoices] DB error for client=%s: %s", client_id, db_exc)
+                continue
+
+            invoice_url = f"{settings.SERVER_URL}/invoice/{invoice['invoice_token']}"
+            plan_label  = plan.title()
+            month_name  = now.strftime("%B %Y")
+            due_display = datetime.strptime(due_date, "%Y-%m-%d").strftime("%d %B %Y")
+            amount_str  = f"₹{amount:,.0f}"
+
+            msg = (
+                f"🧾 *Invoice for {month_name}*\n\n"
+                f"Hi! Here is your monthly invoice for *{clinic_name}*.\n\n"
+                f"📋 Invoice No.: *{invoice['invoice_number']}*\n"
+                f"📦 Plan: *{plan_label}*\n"
+                f"💰 Amount: *{amount_str}*\n"
+                f"📅 Due by: *{due_display}*\n\n"
+                f"🔗 View invoice:\n{invoice_url}\n\n"
+                f"Please pay via UPI to *{settings.INVOICE_UPI_ID}* and send us the screenshot to confirm renewal. "
+                f"Thank you! 🙏"
+            )
+
+            success = await whatsapp.send_text(
+                contact_phone, msg, phone_id=client_pid, token=client_token
+            )
+            if success:
+                sent_count += 1
+                logger.info(
+                    "[Invoices] Sent %s to client=%s (%s)",
+                    invoice["invoice_number"], client_id, contact_phone,
+                )
+            else:
+                logger.error("[Invoices] Failed to send to client=%s", client_id)
+
+        # Mark any overdue invoices
+        overdue_count = db.mark_overdue_invoices()
+        logger.info(
+            "[Invoices] Monthly job done — sent=%d, newly_overdue=%d",
+            sent_count, overdue_count,
+        )
+
+    except Exception as exc:
+        logger.error("[Invoices] Monthly job error: %s", exc, exc_info=True)
+
+
 # ── Job 3: Send daily appointment schedule to each doctor ─────────────────────
 
 async def _run_daily_doctor_schedule() -> None:
@@ -524,6 +639,12 @@ def start() -> None:
         _run_intake_previews,
         trigger=IntervalTrigger(minutes=15),   # Same cadence as 1h reminders
         id="intake_previews", replace_existing=True, misfire_grace_time=120,
+    )
+    # ── Monthly invoice: 1st of every month at 8:30 AM IST (3:00 UTC) ──
+    scheduler.add_job(
+        _run_monthly_invoices,
+        trigger=CronTrigger(day=1, hour=3, minute=0, timezone="UTC"),
+        id="monthly_invoices", replace_existing=True, misfire_grace_time=3600,
     )
     scheduler.add_job(
         _run_daily_doctor_schedule,
