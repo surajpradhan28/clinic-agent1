@@ -296,6 +296,405 @@ async def clinic_dashboard_view(request: Request):
         raise HTTPException(status_code=500, detail="Dashboard error")
 
 
+@app.get("/signup")
+async def signup_page(request: Request, plan: str = "", ref: str = ""):
+    """
+    Self-serve clinic signup page.
+    ?plan=starter|pro|suite   — pre-selects a plan card
+    ?ref=CODE                 — pre-fills referral code
+    """
+    plan = plan.lower() if plan in ("starter", "pro", "suite") else ""
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Free Trial — Clinic AI Agent</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#1a1a2e;}}
+    .hero{{background:linear-gradient(135deg,#1A3A5C 0%,#2E75B6 100%);color:#fff;
+           text-align:center;padding:48px 20px 40px;}}
+    .hero h1{{font-size:clamp(24px,5vw,38px);font-weight:800;margin-bottom:10px;}}
+    .hero p{{font-size:16px;opacity:.88;max-width:520px;margin:0 auto;}}
+    .trial-badge{{display:inline-block;background:rgba(255,255,255,.18);
+                  border:1.5px solid rgba(255,255,255,.4);border-radius:20px;
+                  padding:5px 16px;font-size:13px;font-weight:700;margin-bottom:18px;
+                  letter-spacing:.5px;}}
+    .container{{max-width:900px;margin:0 auto;padding:32px 16px 60px;}}
+
+    /* Plan cards */
+    .plans{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:36px;}}
+    @media(max-width:640px){{.plans{{grid-template-columns:1fr;}}}}
+    .plan-card{{background:#fff;border:2px solid #e0e7ef;border-radius:14px;
+                padding:24px 20px;cursor:pointer;transition:all .2s;text-align:center;
+                position:relative;}}
+    .plan-card:hover,.plan-card.selected{{border-color:#2E75B6;box-shadow:0 4px 20px rgba(46,117,182,.18);}}
+    .plan-card.selected{{background:#F0F8FF;}}
+    .plan-card .badge{{position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+                       background:#2E75B6;color:#fff;font-size:11px;font-weight:700;
+                       padding:3px 14px;border-radius:20px;letter-spacing:.5px;white-space:nowrap;}}
+    .plan-card h3{{font-size:18px;font-weight:700;color:#1A3A5C;margin-bottom:4px;}}
+    .plan-card .price{{font-size:28px;font-weight:800;color:#2E75B6;margin:8px 0 4px;}}
+    .plan-card .price span{{font-size:14px;font-weight:400;color:#888;}}
+    .plan-card ul{{list-style:none;margin-top:12px;text-align:left;}}
+    .plan-card ul li{{font-size:13px;color:#444;padding:3px 0;}}
+    .plan-card ul li::before{{content:"✓ ";color:#2E75B6;font-weight:700;}}
+    .plan-card ul li.no::before{{content:"✗ ";color:#ccc;}}
+    .plan-card ul li.no{{color:#bbb;}}
+
+    /* Form */
+    .form-card{{background:#fff;border-radius:16px;padding:36px 32px;
+                box-shadow:0 4px 24px rgba(0,0,0,.08);}}
+    @media(max-width:480px){{.form-card{{padding:24px 16px;}}}}
+    .form-card h2{{font-size:22px;font-weight:700;color:#1A3A5C;margin-bottom:6px;}}
+    .form-card p{{font-size:14px;color:#666;margin-bottom:24px;}}
+    .form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;}}
+    @media(max-width:560px){{.form-grid{{grid-template-columns:1fr;}}}}
+    .field{{display:flex;flex-direction:column;gap:6px;}}
+    .field.full{{grid-column:1/-1;}}
+    label{{font-size:13px;font-weight:600;color:#444;}}
+    input,select{{border:1.5px solid #d0d7e0;border-radius:8px;padding:10px 14px;
+                  font-size:14px;color:#1a1a2e;outline:none;transition:border .2s;
+                  font-family:inherit;}}
+    input:focus,select:focus{{border-color:#2E75B6;box-shadow:0 0 0 3px rgba(46,117,182,.1);}}
+    .phone-hint{{font-size:11px;color:#888;margin-top:2px;}}
+    .submit-btn{{width:100%;background:linear-gradient(135deg,#1A3A5C,#2E75B6);
+                 color:#fff;border:none;border-radius:10px;padding:14px;
+                 font-size:16px;font-weight:700;cursor:pointer;margin-top:20px;
+                 transition:opacity .2s;letter-spacing:.3px;}}
+    .submit-btn:hover{{opacity:.9;}}
+    .terms{{font-size:12px;color:#888;text-align:center;margin-top:12px;}}
+    .terms a{{color:#2E75B6;}}
+
+    /* Trust row */
+    .trust{{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;
+             margin-top:28px;padding-top:24px;border-top:1px solid #eee;}}
+    .trust-item{{text-align:center;}}
+    .trust-item .num{{font-size:22px;font-weight:800;color:#1A3A5C;}}
+    .trust-item .lbl{{font-size:12px;color:#888;}}
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="trial-badge">🎁 7-Day Free Trial — No Credit Card Needed</div>
+    <h1>Your Clinic's 24/7 WhatsApp Receptionist</h1>
+    <p>Automate appointment booking, reminders, and patient communication — set up in under 10 minutes.</p>
+  </div>
+
+  <div class="container">
+    <!-- Plan selector -->
+    <div class="plans">
+      <div class="plan-card {'selected' if plan=='starter' else ''}" id="card-starter" onclick="selectPlan('starter')">
+        <h3>Starter</h3>
+        <div class="price">₹999<span>/mo</span></div>
+        <ul>
+          <li>AI appointment booking</li>
+          <li>24-hour reminders</li>
+          <li>Clinic info Q&amp;A</li>
+          <li class="no">Cancel &amp; reschedule</li>
+          <li class="no">Waitlist</li>
+          <li class="no">Patient intake form</li>
+        </ul>
+      </div>
+      <div class="plan-card {'selected' if plan=='pro' else ''}" id="card-pro" onclick="selectPlan('pro')" style="{'border-color:#2E75B6;' if plan!='suite' else ''}">
+        <div class="badge">⭐ Most Popular</div>
+        <h3>Pro</h3>
+        <div class="price">₹1,999<span>/mo</span></div>
+        <ul>
+          <li>Everything in Starter</li>
+          <li>Cancel &amp; reschedule</li>
+          <li>Waitlist auto-booking</li>
+          <li>Patient intake form</li>
+          <li>1-hour reminders</li>
+          <li class="no">Daily schedule to doctor</li>
+        </ul>
+      </div>
+      <div class="plan-card {'selected' if plan=='suite' else ''}" id="card-suite" onclick="selectPlan('suite')">
+        <h3>Suite</h3>
+        <div class="price">₹2,999<span>/mo</span></div>
+        <ul>
+          <li>Everything in Pro</li>
+          <li>Daily schedule to doctor</li>
+          <li>Broadcast to all patients</li>
+          <li>Custom clinic hours</li>
+          <li>Priority support</li>
+          <li>Multi-doctor (coming soon)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Signup form -->
+    <div class="form-card">
+      <h2>Start Your Free 7-Day Trial</h2>
+      <p>Fill in your details below. We'll set up your WhatsApp AI and contact you within a few hours.</p>
+
+      <form method="POST" action="/signup" id="signupForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="clinic_name">Clinic Name *</label>
+            <input type="text" id="clinic_name" name="clinic_name" placeholder="e.g. City Health Clinic" required>
+          </div>
+          <div class="field">
+            <label for="doctor_name">Doctor's Name *</label>
+            <input type="text" id="doctor_name" name="doctor_name" placeholder="e.g. Dr. Priya Sharma" required>
+          </div>
+          <div class="field">
+            <label for="contact_phone">Doctor's WhatsApp Number *</label>
+            <input type="tel" id="contact_phone" name="contact_phone"
+                   placeholder="e.g. 919876543210" required
+                   pattern="[0-9]{{10,15}}">
+            <span class="phone-hint">Country code + number, no spaces or + (e.g. 919876543210)</span>
+          </div>
+          <div class="field">
+            <label for="city">City *</label>
+            <input type="text" id="city" name="city" placeholder="e.g. Mumbai" required>
+          </div>
+          <div class="field">
+            <label for="contact_email">Email <span style="color:#aaa;font-weight:400">(for invoices)</span></label>
+            <input type="email" id="contact_email" name="contact_email" placeholder="doctor@example.com">
+          </div>
+          <div class="field">
+            <label for="referred_by">Referral Code <span style="color:#aaa;font-weight:400">(optional)</span></label>
+            <input type="text" id="referred_by" name="referred_by"
+                   value="{ref}" placeholder="e.g. ABC123" style="text-transform:uppercase;">
+          </div>
+          <div class="field full">
+            <label for="plan">Selected Plan *</label>
+            <select id="plan" name="plan" required>
+              <option value="starter" {'selected' if plan=='starter' else ''}>Starter — ₹999/month</option>
+              <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro — ₹1,999/month ⭐ Most Popular</option>
+              <option value="suite" {'selected' if plan=='suite' else ''}>Suite — ₹2,999/month</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="submit-btn">🚀 Start My Free 7-Day Trial</button>
+        <p class="terms">By signing up you agree to our
+          <a href="/privacy" target="_blank">Privacy Policy</a> and
+          <a href="/terms" target="_blank">Terms of Service</a>.
+          No credit card required for the trial.
+        </p>
+      </form>
+
+      <div class="trust">
+        <div class="trust-item"><div class="num">10 min</div><div class="lbl">Average setup time</div></div>
+        <div class="trust-item"><div class="num">40%</div><div class="lbl">Fewer no-shows</div></div>
+        <div class="trust-item"><div class="num">24/7</div><div class="lbl">Patient bookings</div></div>
+        <div class="trust-item"><div class="num">0</div><div class="lbl">App downloads needed</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function selectPlan(plan) {{
+      ['starter','pro','suite'].forEach(p => {{
+        document.getElementById('card-'+p).classList.toggle('selected', p===plan);
+      }});
+      document.getElementById('plan').value = plan;
+    }}
+    // Pre-select Pro if nothing selected
+    const sel = document.getElementById('plan').value;
+    if(sel) selectPlan(sel); else selectPlan('pro');
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/signup")
+async def signup_submit(request: Request):
+    """
+    Process clinic self-serve signup.
+    Creates a client record with status='pending', logs the signup,
+    notifies admin via WhatsApp, and shows the success page.
+    """
+    import secrets as _secrets
+    from datetime import datetime as _dt, timedelta as _td
+
+    form   = await request.form()
+    clinic_name   = (form.get("clinic_name")   or "").strip()
+    doctor_name   = (form.get("doctor_name")   or "").strip()
+    contact_phone = (form.get("contact_phone") or "").strip().replace("+", "").replace(" ", "")
+    city          = (form.get("city")          or "").strip()
+    contact_email = (form.get("contact_email") or "").strip()
+    plan          = (form.get("plan")          or "pro").lower()
+    referred_by   = (form.get("referred_by")   or "").strip().upper()
+
+    if not all([clinic_name, doctor_name, contact_phone, city]):
+        raise HTTPException(status_code=400, detail="Please fill in all required fields.")
+    if plan not in ("starter", "pro", "suite"):
+        plan = "pro"
+
+    # Generate a unique referral code for this new clinic
+    ref_code = _secrets.token_hex(3).upper()
+
+    # Trial window: 7 days from now
+    now = _dt.now(timezone.utc)
+    trial_ends = now + _td(days=7)
+
+    # Create client in DB
+    try:
+        supabase = db.get_db()
+
+        # Check for duplicate phone
+        existing = (
+            supabase.table("clients")
+            .select("id, status")
+            .eq("contact_phone", contact_phone)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            # Already exists — show friendly message
+            return HTMLResponse(content=_signup_already_exists_html(clinic_name, contact_phone), status_code=200)
+
+        new_client = (
+            supabase.table("clients")
+            .insert({
+                "clinic_name":      clinic_name,
+                "doctor_name":      doctor_name,
+                "contact_name":     doctor_name,
+                "contact_phone":    contact_phone,
+                "contact_email":    contact_email or None,
+                "city":             city,
+                "plan":             plan,
+                "status":           "pending",
+                "signup_source":    "web",
+                "referred_by":      referred_by or None,
+                "referral_code":    ref_code,
+                "trial_started_at": now.isoformat(),
+                "trial_ends_at":    trial_ends.isoformat(),
+                "dashboard_key":    _secrets.token_urlsafe(24),
+                "whatsapp_phone_id": "",   # Admin will fill in during setup
+                "whatsapp_token":    "",
+            })
+            .execute()
+        )
+        client_id = new_client.data[0]["id"] if new_client.data else None
+
+        # Log the signup
+        supabase.table("signups").insert({
+            "clinic_name":   clinic_name,
+            "doctor_name":   doctor_name,
+            "contact_phone": contact_phone,
+            "contact_email": contact_email or None,
+            "city":          city,
+            "plan":          plan,
+            "referred_by":   referred_by or None,
+            "client_id":     client_id,
+        }).execute()
+
+    except Exception as exc:
+        logger.error("[Signup] DB error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
+
+    # Notify admin via WhatsApp
+    if settings.ADMIN_PHONE:
+        admin_msg = (
+            f"🆕 *New Clinic Signup!*\n\n"
+            f"🏥 {clinic_name}\n"
+            f"👨‍⚕️ {doctor_name}\n"
+            f"📱 {contact_phone}\n"
+            f"📍 {city}\n"
+            f"📦 Plan: {plan.title()}\n"
+            f"{'🔗 Referred by: ' + referred_by if referred_by else ''}\n\n"
+            f"⚡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
+            f"Client ID: {client_id}"
+        )
+        try:
+            await whatsapp.send_text(settings.ADMIN_PHONE, admin_msg)
+        except Exception:
+            pass  # Don't fail signup if admin notify fails
+
+    return HTMLResponse(content=_signup_success_html(clinic_name, doctor_name, plan), status_code=200)
+
+
+def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
+    plan_label = plan.title()
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Signed Up! — Clinic AI Agent</title>
+  <style>
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}}
+    .card{{background:#fff;border-radius:16px;padding:48px 40px;max-width:520px;width:100%;
+           text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.1);}}
+    .icon{{font-size:56px;margin-bottom:16px;}}
+    h1{{font-size:26px;font-weight:800;color:#1A3A5C;margin-bottom:8px;}}
+    p{{color:#555;font-size:15px;line-height:1.7;margin-bottom:12px;}}
+    .steps{{background:#F0F8FF;border-radius:12px;padding:20px 24px;text-align:left;margin:24px 0;}}
+    .steps h3{{font-size:14px;font-weight:700;color:#1A3A5C;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;}}
+    .step{{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;font-size:14px;color:#333;}}
+    .step .num{{background:#2E75B6;color:#fff;border-radius:50%;width:22px;height:22px;
+                display:flex;align-items:center;justify-content:center;font-size:12px;
+                font-weight:700;flex-shrink:0;margin-top:1px;}}
+    .badge{{display:inline-block;background:#E8F5E9;color:#2E7D32;border-radius:20px;
+            padding:4px 14px;font-size:13px;font-weight:700;margin:8px 0 0;}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🎉</div>
+    <h1>You're all set, {doctor_name.split()[-1]}!</h1>
+    <div class="badge">7-Day Free Trial Started</div>
+    <br><br>
+    <p>We've received your signup for <strong>{clinic_name}</strong> on the <strong>{plan_label} Plan</strong>.
+       Our team will have your WhatsApp AI up and running shortly.</p>
+
+    <div class="steps">
+      <h3>What happens next</h3>
+      <div class="step"><div class="num">1</div>
+        <div>Our team sets up your dedicated WhatsApp Business number — usually within a few hours.</div>
+      </div>
+      <div class="step"><div class="num">2</div>
+        <div>You'll receive a WhatsApp message on <strong>{clinic_name[:20]}</strong>'s number with your login and a quick setup guide.</div>
+      </div>
+      <div class="step"><div class="num">3</div>
+        <div>Send your first test booking and see the AI in action. Setup takes under 10 minutes.</div>
+      </div>
+      <div class="step"><div class="num">4</div>
+        <div>Your 7-day trial begins from activation day — full access, no credit card needed.</div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:#888;">Questions? WhatsApp us at <strong>{settings.ADMIN_PHONE or 'our support number'}</strong>.</p>
+  </div>
+</body>
+</html>"""
+
+
+def _signup_already_exists_html(clinic_name: str, phone: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Already Registered</title>
+  <style>
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}}
+    .card{{background:#fff;border-radius:16px;padding:48px 40px;max-width:460px;width:100%;
+           text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.1);}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size:48px;margin-bottom:16px;">👋</div>
+    <h2 style="color:#1A3A5C;margin-bottom:12px;">You're already registered!</h2>
+    <p style="color:#555;font-size:15px;">
+      A clinic account already exists for <strong>{phone}</strong>.
+      If you need help, please WhatsApp us at <strong>{settings.ADMIN_PHONE or 'our support number'}</strong>.
+    </p>
+    <a href="/signup" style="display:inline-block;margin-top:24px;background:#2E75B6;color:#fff;
+       padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">
+      ← Back to Signup
+    </a>
+  </div>
+</body>
+</html>"""
+
+
 @app.get("/invoice/{token}")
 async def invoice_view(token: str):
     """

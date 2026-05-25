@@ -63,7 +63,7 @@ async def _run_followups() -> None:
                 if not phone:
                     continue
 
-                message = (
+                fallback = (
                     f"Hi *{name}!* 👋\n\n"
                     f"It's been a week since your visit with *{doctor_name}*. "
                     f"How are you feeling now?\n\n"
@@ -71,7 +71,13 @@ async def _run_followups() -> None:
                     f"2️⃣  *Same as before* 😐\n"
                     f"3️⃣  *Not well / Getting worse* 😔"
                 )
-                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
+                success = await whatsapp.send_template_or_text(
+                    phone,
+                    template_name="clinic_followup_checkup",
+                    body_params=[name, doctor_name],
+                    fallback_text=fallback,
+                    phone_id=client_pid, token=client_token,
+                )
                 if success:
                     db.mark_followup_sent(followup_id)
                     logger.info("[Scheduler] Follow-up sent (client=%s, followup=%s)", client_id, followup_id)
@@ -115,7 +121,7 @@ async def _run_reminders() -> None:
                 except Exception:
                     date_display = appt_date
 
-                message = (
+                fallback = (
                     f"⏰ *Appointment Reminder!*\n\n"
                     f"Hi *{name}!* This is a reminder for your appointment tomorrow.\n\n"
                     f"🏥 *{clinic_name}*\n"
@@ -125,7 +131,13 @@ async def _run_reminders() -> None:
                     f"📍 {clinic_address}\n\n"
                     f"Please arrive 5-10 minutes early. See you tomorrow! 🙏"
                 )
-                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
+                success = await whatsapp.send_template_or_text(
+                    phone,
+                    template_name="clinic_appt_reminder_24h",
+                    body_params=[name, clinic_name, date_display, slot, clinic_address],
+                    fallback_text=fallback,
+                    phone_id=client_pid, token=client_token,
+                )
                 if success:
                     db.mark_reminder_sent(appt_id)
                     logger.info("[Scheduler] Reminder sent (client=%s, appt=%s)", client_id, appt_id)
@@ -169,7 +181,7 @@ async def _run_1h_reminders() -> None:
                 except Exception:
                     date_display = appt_date
 
-                message = (
+                fallback = (
                     f"⏰ *Appointment in 1 Hour!*\n\n"
                     f"Hi *{name}!* Just a quick reminder — your appointment is *in about 1 hour*.\n\n"
                     f"🏥 *{clinic_name}*\n"
@@ -179,7 +191,13 @@ async def _run_1h_reminders() -> None:
                     f"📍 {clinic_address}\n\n"
                     f"Please leave now to arrive on time. See you soon! 🙏"
                 )
-                success = await whatsapp.send_text(phone, message, phone_id=client_pid, token=client_token)
+                success = await whatsapp.send_template_or_text(
+                    phone,
+                    template_name="clinic_appt_reminder_1h",
+                    body_params=[name, clinic_name, date_display, slot, clinic_address],
+                    fallback_text=fallback,
+                    phone_id=client_pid, token=client_token,
+                )
                 if success:
                     db.mark_1h_reminder_sent(appt_id)
                     logger.info("[Scheduler] 1h reminder sent (client=%s, appt=%s)", client_id, appt_id)
@@ -340,7 +358,7 @@ async def _run_monthly_invoices() -> None:
             due_display = datetime.strptime(due_date, "%Y-%m-%d").strftime("%d %B %Y")
             amount_str  = f"₹{amount:,.0f}"
 
-            msg = (
+            fallback_msg = (
                 f"🧾 *Invoice for {month_name}*\n\n"
                 f"Hi! Here is your monthly invoice for *{clinic_name}*.\n\n"
                 f"📋 Invoice No.: *{invoice['invoice_number']}*\n"
@@ -352,8 +370,18 @@ async def _run_monthly_invoices() -> None:
                 f"Thank you! 🙏"
             )
 
-            success = await whatsapp.send_text(
-                contact_phone, msg, phone_id=client_pid, token=client_token
+            success = await whatsapp.send_template_or_text(
+                contact_phone,
+                template_name="clinic_invoice_monthly",
+                body_params=[
+                    clinic_name,
+                    invoice["invoice_number"],
+                    amount_str,
+                    due_display,
+                    invoice_url,
+                ],
+                fallback_text=fallback_msg,
+                phone_id=client_pid, token=client_token,
             )
             if success:
                 sent_count += 1

@@ -192,6 +192,82 @@ async def send_buttons(
     return await _post(payload, phone_id=phone_id, token=token)
 
 
+# ── Send approved WhatsApp Template message ───────────────────────────────────
+
+async def send_template(
+    phone: str,
+    template_name: str,
+    body_params: list[str] | None = None,
+    language_code: str = "en",
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> bool:
+    """
+    Send a pre-approved WhatsApp Business template message.
+    Works OUTSIDE the 24-hour session window — essential for proactive messages.
+
+    template_name : exact name as registered in Meta Business Manager
+    body_params   : list of {{1}}, {{2}}... substitution values in order
+    language_code : "en" or "hi" (must match the approved template language)
+
+    Example:
+        await send_template(
+            phone, "clinic_appt_reminder_24h",
+            body_params=["Priya", "City Clinic", "26 May 2025", "10:30", "MG Road"]
+        )
+    """
+    components: list[dict] = []
+    if body_params:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(v)} for v in body_params],
+        })
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+            **({"components": components} if components else {}),
+        },
+    }
+    return await _post(payload, phone_id=phone_id, token=token)
+
+
+async def send_template_or_text(
+    phone: str,
+    template_name: str,
+    body_params: list[str],
+    fallback_text: str,
+    language_code: str = "en",
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> bool:
+    """
+    Try to send an approved template first.
+    If the template hasn't been approved yet (returns False), fall back to
+    a plain text message so delivery never silently fails during setup.
+
+    Use this in the scheduler for all proactive messages (reminders, invoices, etc.)
+    Once templates are approved in Meta Business Manager, the template path
+    will succeed every time regardless of the 24-hour session window.
+    """
+    success = await send_template(
+        phone, template_name, body_params=body_params,
+        language_code=language_code, phone_id=phone_id, token=token,
+    )
+    if not success:
+        logger.warning(
+            "Template '%s' failed for %s — falling back to plain text",
+            template_name, phone,
+        )
+        return await send_text(phone, fallback_text, phone_id=phone_id, token=token)
+    return True
+
+
 # ── Mark message as read ──────────────────────────────────────────────────────
 
 async def mark_as_read(
