@@ -8,8 +8,10 @@ client's WhatsApp phone_number_id so replies come from the correct clinic number
 Jobs:
   1. send_followups        — 7-day post-visit check (every hour)
   2. send_reminders        — 24h appointment reminder (every hour)
-  3. daily_doctor_schedule — Morning schedule to doctor (daily cron)
-  4. check_expiry          — Grace period + expiry warnings (daily cron at 2am UTC)
+  3. send_1h_reminders     — 1-hour appointment reminder (every 15 min)
+  4. daily_doctor_schedule — Morning schedule to doctor (daily cron)
+  5. check_expiry          — Grace period + expiry warnings (daily cron at 2am UTC)
+  6. intake_previews       — Patient intake card to doctor 30 min before appt (every 15 min)
 """
 
 from __future__ import annotations
@@ -186,6 +188,76 @@ async def _run_1h_reminders() -> None:
 
     except Exception as exc:
         logger.error("[Scheduler] 1h reminder job error: %s", exc, exc_info=True)
+
+
+# ── Job 2c: Send patient intake card to doctor 30 min before appointment ──────
+
+async def _run_intake_previews() -> None:
+    """
+    Every 15 minutes, check for appointments 25–35 min away.
+    If the patient submitted an intake form at first booking,
+    send a summary card to the doctor so they can prepare.
+    """
+    logger.info("[Scheduler] Running intake preview job…")
+    try:
+        clients = db.get_all_active_clients()
+        for client in clients:
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
+            doctor_phone = (client.get("contact_phone") or "").strip() or (
+                settings.DOCTOR_PHONE if client_id == 1 else ""
+            )
+            if not doctor_phone:
+                continue
+
+            due = db.get_appointments_for_intake_preview(client_id)
+            for appt in due:
+                # Always mark as sent first — so we don't re-process on next tick
+                db.mark_intake_preview_sent(appt["id"])
+
+                intake = db.get_patient_intake(client_id, appt["patient_phone"])
+                if not intake:
+                    # No intake collected (e.g., returning patient) — nothing to send
+                    continue
+
+                try:
+                    date_display = datetime.strptime(
+                        appt["appointment_date"], "%Y-%m-%d"
+                    ).strftime("%d %B %Y")
+                except Exception:
+                    date_display = appt["appointment_date"]
+
+                age_str     = str(intake.get("age"))     if intake.get("age")     else "Not provided"
+                gender_str  = intake.get("gender")       or "Not provided"
+                complaint   = intake.get("chief_complaint") or "Not provided"
+
+                msg = (
+                    f"📋 *Patient Intake — Appointment in ~30 min*\n\n"
+                    f"👤 *{appt['patient_name']}*\n"
+                    f"📱 {appt['patient_phone']}\n"
+                    f"📅 {date_display} at *{appt['slot_time']}*\n\n"
+                    f"🔢 Age      : {age_str}\n"
+                    f"⚧  Gender   : {gender_str}\n"
+                    f"🩺 Complaint: _{complaint}_\n\n"
+                    f"_Collected via WhatsApp at first booking._"
+                )
+                success = await whatsapp.send_text(
+                    doctor_phone, msg, phone_id=client_pid, token=client_token
+                )
+                if success:
+                    logger.info(
+                        "[Scheduler] Intake preview sent (client=%s, appt=%s)",
+                        client_id, appt["id"],
+                    )
+                else:
+                    logger.error(
+                        "[Scheduler] Failed to send intake preview (client=%s, appt=%s)",
+                        client_id, appt["id"],
+                    )
+
+    except Exception as exc:
+        logger.error("[Scheduler] Intake preview job error: %s", exc, exc_info=True)
 
 
 # ── Job 3: Send daily appointment schedule to each doctor ─────────────────────
@@ -447,6 +519,11 @@ def start() -> None:
         _run_1h_reminders,
         trigger=IntervalTrigger(minutes=15),   # Check every 15 min for precision
         id="send_1h_reminders", replace_existing=True, misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _run_intake_previews,
+        trigger=IntervalTrigger(minutes=15),   # Same cadence as 1h reminders
+        id="intake_previews", replace_existing=True, misfire_grace_time=120,
     )
     scheduler.add_job(
         _run_daily_doctor_schedule,

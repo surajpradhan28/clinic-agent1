@@ -132,6 +132,48 @@ _TOOLS_BASE = [
     {
         "type": "function",
         "function": {
+            "name": "join_waitlist",
+            "description": (
+                "Add the patient to the waitlist for a slot that is fully booked. "
+                "Call this ONLY when create_appointment fails with a slot-taken/double-booking error "
+                "and the patient agrees to be waitlisted. "
+                "When a cancellation opens that slot, the patient will be auto-booked and notified."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "patient_name": {"type": "string", "description": "Full name of the patient"},
+                    "date":         {"type": "string", "description": "YYYY-MM-DD"},
+                    "slot_time":    {"type": "string", "description": "HH:MM"},
+                },
+                "required": ["patient_name", "date", "slot_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_patient_intake",
+            "description": (
+                "Save the new-patient intake details after collecting them through conversation. "
+                "Call this ONCE after all three fields (age, gender, chief_complaint) have been gathered. "
+                "Only use this for new patients (create_appointment returned is_new_patient=true)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appointment_id":  {"type": "integer", "description": "ID from create_appointment result"},
+                    "age":             {"type": "integer", "description": "Patient's age in years"},
+                    "gender":          {"type": "string",  "description": "Male / Female / Other"},
+                    "chief_complaint": {"type": "string",  "description": "Main reason for the visit"},
+                },
+                "required": ["appointment_id", "age", "gender", "chief_complaint"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_clinic_info",
             "description": "Get clinic name, doctor name, address, and working hours.",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -461,11 +503,33 @@ async def _execute_function(
         slot_time    = fn_args.get("slot_time", "")
         try:
             appt = db.create_appointment(client_id, phone, patient_name, date, slot_time)
+            new_patient = db.is_new_patient(client_id, phone, current_appt_id=appt["id"])
             return json.dumps({
-                "success": True, "appointment_id": appt["id"],
-                "patient_name": patient_name, "date": date, "slot_time": slot_time,
-                "message": f"Appointment confirmed for {patient_name} on {date} at {slot_time}",
+                "success":      True,
+                "appointment_id": appt["id"],
+                "patient_name": patient_name,
+                "date":         date,
+                "slot_time":    slot_time,
+                "is_new_patient": new_patient,
+                "message": (
+                    f"Appointment confirmed for {patient_name} on {date} at {slot_time}. "
+                    + ("This is a NEW patient — collect intake (age, gender, chief complaint) before saving." if new_patient else "")
+                ),
             }), appt
+        except ValueError as exc:
+            # Slot already booked — offer waitlist
+            logger.warning("create_appointment slot conflict: %s", exc)
+            return json.dumps({
+                "success": False,
+                "slot_taken": True,
+                "error": str(exc),
+                "suggestion": (
+                    f"That slot is already taken. Offer to add {patient_name} to the waitlist for "
+                    f"{date} at {slot_time} — they will be auto-booked if a cancellation opens up. "
+                    "Ask: 'Would you like me to add you to the waitlist for this slot?' "
+                    "If yes, call join_waitlist."
+                ),
+            }), None
         except Exception as exc:
             logger.error("create_appointment error: %s", exc)
             return json.dumps({"success": False, "error": str(exc)}), None
@@ -481,6 +545,52 @@ async def _execute_function(
             "evening_hours":     f"{settings.EVENING_START} – {settings.EVENING_END}",
             "slot_duration_min": settings.SLOT_DURATION_MIN,
         }), None
+
+    elif fn_name == "join_waitlist":
+        patient_name = fn_args.get("patient_name", "Patient")
+        date         = fn_args.get("date", "")
+        slot_time    = fn_args.get("slot_time", "")
+        if not date or not slot_time:
+            return json.dumps({"success": False, "error": "date and slot_time required"}), None
+        try:
+            db.add_to_waitlist(client_id, phone, patient_name, date, slot_time)
+            try:
+                date_display = datetime.strptime(date, "%Y-%m-%d").strftime("%d %B %Y")
+            except Exception:
+                date_display = date
+            return json.dumps({
+                "success":  True,
+                "date":     date,
+                "slot_time": slot_time,
+                "message":  (
+                    f"Added to waitlist for {date_display} at {slot_time}. "
+                    "You will be automatically booked and notified if someone cancels."
+                ),
+            }), None
+        except Exception as exc:
+            logger.error("join_waitlist error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)}), None
+
+    elif fn_name == "save_patient_intake":
+        appt_id        = fn_args.get("appointment_id")
+        age            = fn_args.get("age")
+        gender         = fn_args.get("gender", "")
+        chief_complaint = fn_args.get("chief_complaint", "")
+        if not appt_id:
+            return json.dumps({"success": False, "error": "appointment_id required"}), None
+        try:
+            db.save_patient_intake(
+                client_id, phone, int(appt_id),
+                int(age) if age is not None else None,
+                gender, chief_complaint,
+            )
+            return json.dumps({
+                "success": True,
+                "message": "Intake details saved. The doctor will review them before your appointment.",
+            }), None
+        except Exception as exc:
+            logger.error("save_patient_intake error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)}), None
 
     elif fn_name == "get_my_appointment":
         appt = db.get_upcoming_appointment(client_id, phone)
@@ -509,7 +619,50 @@ async def _execute_function(
                     "success": False,
                     "error": "Appointment not found for your account. Please call get_my_appointment first.",
                 }), None
+
+            freed_date = owned["appointment_date"]
+            freed_slot = owned["slot_time"]
             db.cancel_appointment(int(appt_id), client_id=client_id)
+
+            # ── Waitlist: auto-book next waiting patient for the freed slot ──
+            waiter = db.pop_next_from_waitlist(client_id, freed_date, freed_slot)
+            if waiter:
+                try:
+                    new_appt = db.create_appointment(
+                        client_id,
+                        waiter["patient_phone"],
+                        waiter["patient_name"],
+                        waiter["requested_date"],
+                        waiter["requested_slot"],
+                    )
+                    info = _get_clinic_info(client_id)
+                    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+                    client_token = client.get("whatsapp_token") or None
+                    try:
+                        date_display = datetime.strptime(freed_date, "%Y-%m-%d").strftime("%A, %d %B %Y")
+                    except Exception:
+                        date_display = freed_date
+                    notify_msg = (
+                        f"🎉 *Great news, {waiter['patient_name']}!*\n\n"
+                        f"A slot just opened up — your waitlisted appointment has been *automatically confirmed*!\n\n"
+                        f"🏥 *{info['clinic_name']}*\n"
+                        f"👨‍⚕️ {info['doctor_name']}\n"
+                        f"📅 *{date_display}*\n"
+                        f"⏰ *{freed_slot}*\n"
+                        f"📍 {info['clinic_address']}\n\n"
+                        f"See you then! 🙏 Reply *cancel* if you can no longer make it."
+                    )
+                    await whatsapp.send_text(
+                        waiter["patient_phone"], notify_msg,
+                        phone_id=client_pid, token=client_token,
+                    )
+                    logger.info(
+                        "Waitlist auto-booked %s → appt %s (client=%s)",
+                        waiter["patient_phone"], new_appt["id"], client_id,
+                    )
+                except Exception as we:
+                    logger.error("Waitlist auto-book error: %s", we)
+
             return json.dumps({"success": True, "message": f"Appointment {appt_id} cancelled."}), None
         except Exception as exc:
             return json.dumps({"success": False, "error": str(exc)}), None
@@ -534,7 +687,50 @@ async def _execute_function(
                     "error": "Appointment not found for your account. Please call get_my_appointment first.",
                 }), None
             patient_name = cur["patient_name"] if cur else "Patient"
+            freed_date   = cur["appointment_date"]
+            freed_slot   = cur["slot_time"]
+
             new_appt = db.reschedule_appointment(client_id, int(appt_id), phone, patient_name, new_date, new_slot)
+
+            # ── Waitlist: auto-book next waiting patient for the freed slot ──
+            waiter = db.pop_next_from_waitlist(client_id, freed_date, freed_slot)
+            if waiter:
+                try:
+                    wb_appt = db.create_appointment(
+                        client_id,
+                        waiter["patient_phone"],
+                        waiter["patient_name"],
+                        waiter["requested_date"],
+                        waiter["requested_slot"],
+                    )
+                    info = _get_clinic_info(client_id)
+                    client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+                    client_token = client.get("whatsapp_token") or None
+                    try:
+                        date_display = datetime.strptime(freed_date, "%Y-%m-%d").strftime("%A, %d %B %Y")
+                    except Exception:
+                        date_display = freed_date
+                    notify_msg = (
+                        f"🎉 *Great news, {waiter['patient_name']}!*\n\n"
+                        f"A slot just opened up — your waitlisted appointment has been *automatically confirmed*!\n\n"
+                        f"🏥 *{info['clinic_name']}*\n"
+                        f"👨‍⚕️ {info['doctor_name']}\n"
+                        f"📅 *{date_display}*\n"
+                        f"⏰ *{freed_slot}*\n"
+                        f"📍 {info['clinic_address']}\n\n"
+                        f"See you then! 🙏 Reply *cancel* if you can no longer make it."
+                    )
+                    await whatsapp.send_text(
+                        waiter["patient_phone"], notify_msg,
+                        phone_id=client_pid, token=client_token,
+                    )
+                    logger.info(
+                        "Waitlist auto-booked %s → appt %s (client=%s)",
+                        waiter["patient_phone"], wb_appt["id"], client_id,
+                    )
+                except Exception as we:
+                    logger.error("Waitlist auto-book (reschedule) error: %s", we)
+
             return json.dumps({
                 "success": True, "new_appointment_id": new_appt["id"],
                 "patient_name": patient_name, "new_date": new_date, "new_slot": new_slot,
@@ -850,6 +1046,21 @@ Guidelines:
 - Do NOT make up appointment times — always check_available_slots first.
 - For anything medical (diagnosis, medicines, dosage), say "Please consult {doctor_name} during your appointment."
 - Respond in the same language the patient uses (Hindi or English).
+
+Waitlist:
+- If create_appointment returns slot_taken=true, immediately say the slot is fully booked and ask: "Would you like me to add you to the waitlist? You'll be automatically booked and notified if someone cancels." If yes, call join_waitlist.
+
+New Patient Intake (IMPORTANT — only for new patients):
+- If create_appointment returns is_new_patient=true, the patient is visiting for the very first time.
+- After confirming their booking, say: "Since this is your first visit with us, could I note a few quick details for {doctor_name}? It helps the doctor prepare. 😊"
+- Ask ONE question at a time in this order — do NOT ask all at once:
+  1. "How old are you?"
+  2. "And your gender? (Male / Female / Other)"
+  3. "Lastly, what is the main reason for your visit today?"
+- After collecting all three answers, call save_patient_intake with the appointment_id from create_appointment.
+- Then say: "Thank you! {doctor_name} will have everything ready. See you at your appointment! 🙏"
+- If the patient skips or declines to answer intake questions, that's completely fine — end warmly without pushing.
+- Only collect intake ONCE (is_new_patient=true). Do not ask returning patients again.
 {cancel_reschedule_rules}{custom_notes_section}"""
 
 

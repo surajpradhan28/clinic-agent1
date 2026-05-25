@@ -9,6 +9,7 @@ Tables:
   clients | subscriptions | payments
   patients | conversations | appointments | followups | review_requests
   blocked_slots | clinic_settings | clinic_notes | custom_schedule
+  waitlist | patient_intake
 """
 
 from __future__ import annotations
@@ -962,6 +963,183 @@ def clear_custom_schedule(client_id: int, date: str) -> bool:
         .execute()
     )
     return bool(result.data)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WAITLIST
+# ══════════════════════════════════════════════════════════════════════════════
+
+def add_to_waitlist(
+    client_id: int,
+    patient_phone: str,
+    patient_name: str,
+    requested_date: str,
+    requested_slot: str,
+) -> dict:
+    """Add a patient to the waitlist for a fully-booked slot (upsert = idempotent)."""
+    db_c = get_db()
+    result = (
+        db_c.table("waitlist")
+        .upsert(
+            {
+                "client_id":     client_id,
+                "patient_phone": patient_phone,
+                "patient_name":  patient_name,
+                "requested_date": requested_date,
+                "requested_slot": requested_slot,
+            },
+            on_conflict="client_id,patient_phone,requested_date,requested_slot",
+        )
+        .execute()
+    )
+    logger.info(
+        "Waitlist: %s added for %s %s (client=%s)",
+        patient_phone, requested_date, requested_slot, client_id,
+    )
+    return result.data[0] if result.data else {}
+
+
+def get_waitlist_for_slot(client_id: int, date: str, slot_time: str) -> list[dict]:
+    """Return all waitlist entries for a slot, oldest first (FIFO)."""
+    db_c = get_db()
+    result = (
+        db_c.table("waitlist")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("requested_date", date)
+        .eq("requested_slot", slot_time)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+def pop_next_from_waitlist(client_id: int, date: str, slot_time: str) -> dict | None:
+    """Return the first waiter for a slot and remove them from the queue."""
+    entries = get_waitlist_for_slot(client_id, date, slot_time)
+    if not entries:
+        return None
+    first = entries[0]
+    get_db().table("waitlist").delete().eq("id", first["id"]).execute()
+    logger.info(
+        "Waitlist: popped %s for %s %s (client=%s)",
+        first["patient_phone"], date, slot_time, client_id,
+    )
+    return first
+
+
+def get_patient_waitlist(client_id: int, phone: str) -> list[dict]:
+    """Return all active waitlist entries for a specific patient."""
+    db_c = get_db()
+    result = (
+        db_c.table("waitlist")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .order("requested_date", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PATIENT INTAKE FORM
+# ══════════════════════════════════════════════════════════════════════════════
+
+def save_patient_intake(
+    client_id: int,
+    patient_phone: str,
+    appointment_id: int,
+    age: int | None,
+    gender: str | None,
+    chief_complaint: str | None,
+) -> dict:
+    """Persist the new-patient intake collected through conversation."""
+    db_c = get_db()
+    result = (
+        db_c.table("patient_intake")
+        .insert({
+            "client_id":       client_id,
+            "patient_phone":   patient_phone,
+            "appointment_id":  appointment_id,
+            "age":             age,
+            "gender":          gender,
+            "chief_complaint": chief_complaint,
+        })
+        .execute()
+    )
+    logger.info(
+        "Intake saved (client=%s, phone=%s, appt=%s)",
+        client_id, patient_phone, appointment_id,
+    )
+    return result.data[0] if result.data else {}
+
+
+def get_patient_intake(client_id: int, patient_phone: str) -> dict | None:
+    """Return the most recent intake form for this patient, or None."""
+    db_c = get_db()
+    result = (
+        db_c.table("patient_intake")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("patient_phone", patient_phone)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def is_new_patient(client_id: int, phone: str, current_appt_id: int | None = None) -> bool:
+    """
+    True if this patient has no prior confirmed/completed appointments at this clinic.
+    Pass current_appt_id to exclude the just-created booking from the count.
+    """
+    db_c = get_db()
+    query = (
+        db_c.table("appointments")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .in_("status", ["confirmed", "completed"])
+    )
+    if current_appt_id:
+        query = query.neq("id", current_appt_id)
+    result = query.execute()
+    count = result.count if result.count is not None else len(result.data or [])
+    return count == 0
+
+
+def get_appointments_for_intake_preview(client_id: int) -> list[dict]:
+    """
+    Return confirmed appointments whose slot is 25–35 minutes from now
+    and whose intake_preview_sent flag is False.
+    """
+    db_c = get_db()
+    now          = datetime.now(_IST)
+    window_start = now + timedelta(minutes=25)
+    window_end   = now + timedelta(minutes=35)
+
+    result = (
+        db_c.table("appointments")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("status", "confirmed")
+        .eq("intake_preview_sent", False)
+        .execute()
+    )
+    due = []
+    for appt in (result.data or []):
+        appt_dt = _parse_appt_datetime(appt)
+        if appt_dt and window_start <= appt_dt <= window_end:
+            due.append(appt)
+    return due
+
+
+def mark_intake_preview_sent(appt_id: int) -> None:
+    get_db().table("appointments").update(
+        {"intake_preview_sent": True}
+    ).eq("id", appt_id).execute()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
