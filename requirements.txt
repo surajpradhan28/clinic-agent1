@@ -1,4 +1,4 @@
-# v8 — includes per-clinic dashboard (clinic_dashboard.py)
+# v9 — Google Calendar sync (gcal.py)
 # Clinic AI Agent — Python dependencies
 # Install: pip install -r requirements.txt
 

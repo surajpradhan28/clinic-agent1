@@ -14,6 +14,7 @@ Jobs:
   6. intake_previews       — Patient intake card to doctor 30 min before appt (every 15 min)
   7. trial_automation      — Welcome, 3-day nudge, 1-day warning, auto-suspend (daily 8:30 AM IST)
   8. upsell_nudges         — Usage-based upgrade nudge (5th of month, 9 AM IST)
+  9. gcal_sync             — Google Calendar busy → block slots (every 15 min)
 """
 
 from __future__ import annotations
@@ -922,6 +923,40 @@ async def _run_trial_automation() -> None:
         logger.error("[TrialAuto] Job failed: %s", exc, exc_info=True)
 
 
+# ── Job 9: Google Calendar sync ──────────────────────────────────────────────
+
+async def _run_gcal_sync() -> None:
+    """
+    Runs every 15 minutes.
+    For every clinic that has Google Calendar connected (oauth_tokens row exists),
+    fetches busy slots for the next 7 days and keeps blocked_slots in sync.
+    """
+    if not settings.GOOGLE_CLIENT_ID:
+        return  # Google Calendar not configured — skip silently
+
+    try:
+        from gcal import sync_calendar_blocks
+        connected = db.get_clients_with_gcal()
+        if not connected:
+            return
+
+        logger.info("[GCal] Syncing %d clinic(s)…", len(connected))
+        for row in connected:
+            client_id = row["client_id"]
+            try:
+                summary = await sync_calendar_blocks(client_id)
+                if summary["blocked_new"] or summary["unblocked"]:
+                    logger.info(
+                        "[GCal] client=%s → +%d blocked, -%d unblocked",
+                        client_id, summary["blocked_new"], summary["unblocked"],
+                    )
+            except Exception as exc:
+                logger.warning("[GCal] Sync error for client=%s: %s", client_id, exc)
+
+    except Exception as exc:
+        logger.error("[GCal] Job failed: %s", exc, exc_info=True)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -972,6 +1007,13 @@ def start() -> None:
         _run_trial_automation,
         trigger=CronTrigger(hour=3, minute=0, timezone="UTC"),
         id="trial_automation", replace_existing=True, misfire_grace_time=1800,
+    )
+
+    # ── Google Calendar sync: every 15 minutes ──
+    scheduler.add_job(
+        _run_gcal_sync,
+        trigger=IntervalTrigger(minutes=15),
+        id="gcal_sync", replace_existing=True, misfire_grace_time=120,
     )
 
     scheduler.start()

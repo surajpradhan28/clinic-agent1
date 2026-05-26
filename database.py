@@ -624,6 +624,117 @@ def get_blocked_slots_detail(client_id: int, date: str) -> list[dict]:
     return result.data or []
 
 
+# ── Google Calendar OAuth token storage ──────────────────────────────────────
+
+def store_oauth_token(
+    client_id: int,
+    provider: str,
+    access_token: str,
+    refresh_token: str | None,
+    token_expiry: str | None,
+    calendar_id: str = "primary",
+) -> None:
+    """Upsert an OAuth token record for a clinic."""
+    db_c = get_db()
+    db_c.table("oauth_tokens").upsert(
+        {
+            "client_id":     client_id,
+            "provider":      provider,
+            "access_token":  access_token,
+            "refresh_token": refresh_token,
+            "token_expiry":  token_expiry,
+            "calendar_id":   calendar_id,
+            "updated_at":    datetime.now(_IST).isoformat(),
+        },
+        on_conflict="client_id,provider",
+    ).execute()
+
+
+def get_oauth_token(client_id: int, provider: str = "google") -> dict | None:
+    """Fetch an OAuth token row for a clinic."""
+    db_c = get_db()
+    result = (
+        db_c.table("oauth_tokens")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("provider", provider)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def get_clients_with_gcal() -> list[dict]:
+    """Return all client IDs that have a Google Calendar token stored."""
+    db_c = get_db()
+    result = (
+        db_c.table("oauth_tokens")
+        .select("client_id")
+        .eq("provider", "google")
+        .execute()
+    )
+    return result.data or []
+
+
+def delete_oauth_token(client_id: int, provider: str = "google") -> None:
+    """Remove a stored OAuth token (disconnect calendar)."""
+    db_c = get_db()
+    db_c.table("oauth_tokens").delete().eq(
+        "client_id", client_id
+    ).eq("provider", provider).execute()
+
+
+# ── GCal-specific block helpers ───────────────────────────────────────────────
+
+def get_gcal_blocked_slots(client_id: int, date: str) -> list[str]:
+    """Return slot times blocked by Google Calendar sync for a given date."""
+    db_c = get_db()
+    result = (
+        db_c.table("blocked_slots")
+        .select("slot_time")
+        .eq("client_id", client_id)
+        .eq("block_date", date)
+        .eq("source", "gcal")
+        .execute()
+    )
+    if not result.data:
+        return []
+    return [r["slot_time"] for r in result.data if r["slot_time"] is not None]
+
+
+def block_slots_gcal(client_id: int, date: str, slot_times: list[str]) -> None:
+    """Block specific slots with source='gcal'."""
+    if not slot_times:
+        return
+    db_c = get_db()
+    rows = [
+        {
+            "client_id":  client_id,
+            "block_date": date,
+            "slot_time":  s,
+            "reason":     "Google Calendar — busy",
+            "source":     "gcal",
+        }
+        for s in slot_times
+    ]
+    db_c.table("blocked_slots").upsert(
+        rows, on_conflict="client_id,block_date,slot_time"
+    ).execute()
+
+
+def unblock_gcal_slots(client_id: int, date: str, slot_times: list[str]) -> None:
+    """Remove gcal-sourced blocks for specific slots (event deleted in Google)."""
+    if not slot_times:
+        return
+    db_c = get_db()
+    for slot in slot_times:
+        db_c.table("blocked_slots").delete().eq(
+            "client_id", client_id
+        ).eq("block_date", date).eq("slot_time", slot).eq(
+            "source", "gcal"
+        ).execute()
+
+
 def get_appointments_in_slots(client_id: int, date: str, slot_times: list[str]) -> list[dict]:
     if not slot_times:
         return []

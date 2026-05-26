@@ -1513,6 +1513,122 @@ async def invoice_view(token: str):
     return HTMLResponse(content=html)
 
 
+@app.get("/calendar/connect/{dashboard_key}")
+async def calendar_connect(dashboard_key: str):
+    """
+    Step 1 of Google Calendar OAuth.
+    Doctor visits this URL from their clinic dashboard → redirected to Google consent.
+
+    URL: /calendar/connect/<dashboard_key>
+    """
+    if not settings.GOOGLE_CLIENT_ID:
+        return HTMLResponse(
+            "<h2>Google Calendar is not configured for this system.</h2>"
+            "<p>Contact support to enable it.</p>",
+            status_code=501,
+        )
+
+    client = db.get_client_by_dashboard_key(dashboard_key)
+    if not client:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    from gcal import get_oauth_url
+    from fastapi.responses import RedirectResponse
+    # Use dashboard_key as state so we can identify the clinic in the callback
+    oauth_url = get_oauth_url(state=dashboard_key)
+    return RedirectResponse(url=oauth_url)
+
+
+@app.get("/calendar/callback")
+async def calendar_callback(request: Request):
+    """
+    Step 2 of Google Calendar OAuth — Google redirects here after consent.
+    Exchanges the auth code for tokens and stores them.
+    """
+    params = dict(request.query_params)
+    code           = params.get("code")
+    state          = params.get("state")   # dashboard_key
+    error          = params.get("error")
+
+    if error:
+        return HTMLResponse(
+            f"<h2>❌ Google Calendar connection failed</h2><p>{error}</p>",
+            status_code=400,
+        )
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+
+    client = db.get_client_by_dashboard_key(state)
+    if not client:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    client_id = client["id"]
+
+    try:
+        from gcal import exchange_code
+        await exchange_code(code=code, client_id=client_id)
+    except Exception as exc:
+        logger.error("[GCal] Token exchange failed for client=%s: %s", client_id, exc)
+        return HTMLResponse(
+            "<h2>❌ Connection failed</h2>"
+            f"<p>Could not complete Google authorisation: {exc}</p>",
+            status_code=500,
+        )
+
+    # Send WhatsApp confirmation to the clinic
+    try:
+        clinic_name = (
+            db.get_all_clinic_settings(client_id).get("clinic_name")
+            or client.get("name", "Your clinic")
+        )
+        doctor_phone = (client.get("contact_phone") or "").strip()
+        client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+        if doctor_phone:
+            await whatsapp.send_text(
+                doctor_phone,
+                f"✅ *Google Calendar Connected!*\n\n"
+                f"Hi {clinic_name}! Your Google Calendar is now linked.\n\n"
+                f"🔄 Sync runs every 15 minutes — any event you mark as *Busy* in Google Calendar "
+                f"will automatically block that slot here.\n\n"
+                f"Events marked as *Free* or *Tentative* are ignored.\n\n"
+                f"To disconnect: visit your clinic dashboard.",
+                phone_id=client_pid,
+            )
+    except Exception as exc:
+        logger.warning("[GCal] WhatsApp confirmation failed: %s", exc)
+
+    return HTMLResponse("""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Calendar Connected</title>
+  <style>
+    body { font-family: Arial, sans-serif; display: flex; justify-content: center;
+           align-items: center; min-height: 100vh; margin: 0; background: #f0fdf4; }
+    .card { background: #fff; border-radius: 16px; padding: 48px 40px;
+            text-align: center; max-width: 440px; box-shadow: 0 4px 24px rgba(0,0,0,.1); }
+    .icon { font-size: 56px; margin-bottom: 16px; }
+    h1 { color: #166534; margin: 0 0 12px; font-size: 24px; }
+    p  { color: #555; line-height: 1.6; margin: 0 0 24px; }
+    .note { background: #f0fdf4; border-radius: 8px; padding: 12px 16px;
+            font-size: 13px; color: #166534; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📅✅</div>
+    <h1>Google Calendar Connected!</h1>
+    <p>Your calendar is now synced. Busy events will automatically block clinic slots every 15 minutes.</p>
+    <div class="note">
+      You will receive a WhatsApp confirmation shortly.<br>
+      You can close this tab.
+    </div>
+  </div>
+</body>
+</html>""")
+
+
 @app.post("/razorpay/webhook")
 async def razorpay_webhook(request: Request):
     """

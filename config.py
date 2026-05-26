@@ -81,6 +81,12 @@ class Settings:
     # Set to your Railway domain: e.g. "https://clinic-agent1-production-9d21.up.railway.app"
     SERVER_URL: str = os.getenv("SERVER_URL", "https://clinic-agent1-production-9d21.up.railway.app")
 
+    # ── Google Calendar OAuth ─────────────────────────────────────────────────
+    # Create at: Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID
+    # Authorized redirect URI must include: <SERVER_URL>/calendar/callback
+    GOOGLE_CLIENT_ID:     str = os.getenv("GOOGLE_CLIENT_ID",     "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
     # ── Subscription plan pricing (INR per month) ─────────────────────────────
     PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))
     PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
