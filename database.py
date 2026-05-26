@@ -483,11 +483,13 @@ def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
         .eq("status", "confirmed")
         .order("slot_time", desc=False)
         .execute()
-    "patient_name, patient_phone, slot_time, client_id"_appointments_for_reminder(client_id: int) -> list[dict]:
+    )
+    return result.data or []
+
+
+def get_appointments_for_reminder(client_id: int) -> list[dict]:
     db = get_db()
-    now = datetime.now(_IST)            rows = result.data or []
-    return [r for r in rows if r.get("client_id") == client_id]
-e IST
+    now = datetime.now(_IST)
     window_start = now + timedelta(hours=23)
     window_end = now + timedelta(hours=25)
 
@@ -513,7 +515,7 @@ def mark_reminder_sent(appt_id: int) -> None:
 
 
 def get_appointments_for_1h_reminder(client_id: int) -> list[dict]:
-    """Return confirmed appointments whose slot is 50–70 min from now and 1h reminder not sent."""
+    """Return confirmed appointments whose slot is 50-70 min from now and 1h reminder not sent."""
     db = get_db()
     now          = datetime.now(_IST)  # Compare in IST — slots are IST
     window_start = now + timedelta(minutes=50)
@@ -876,7 +878,9 @@ def get_appointments_range(client_id: int, date_from: str, date_to: str) -> list
         db.table("appointments")
         .select("id, patient_name, patient_phone, appointment_date, slot_time, status, created_at")
         .eq("client_id", client_id)
-        .gte("appoi"id, client_id, patient_name, patient_phone, appointment_date, slot_time, status, created_at"tatus", ["confirmed", "completed", "cancelled"])
+        .gte("appointment_date", date_from)
+        .lte("appointment_date", date_to)
+        .in_("status", ["confirmed", "completed", "cancelled"])
         .order("appointment_date", desc=False)
         .order("slot_time", desc=False)
         .execute()
@@ -884,10 +888,8 @@ def get_appointments_range(client_id: int, date_from: str, date_to: str) -> list
     return result.data or []
 
 
-def get_dashboard_stats(client_id: int) -> d    rows = result.data or []
-    return [r for r in rows if r.get("client_id") == client_id]
-gate stats for the clinic dashboard:
-      - total_patients: all-time distinct patients
+def get_dashboard_stats(client_id: int) -> dict:
+    """Aggregate stats for the clinic dashboard:
       - month_appointments: confirmed + completed appointments this calendar month
       - today_appointments: confirmed appointments today (IST)
       - pending_followups: follow-ups in 'pending' or 'sent' state
@@ -945,12 +947,13 @@ def get_recent_activity(client_id: int, limit: int = 20) -> list[dict]:
     db = get_db()
     result = (
         db.table("appointments")
-        .select("id, patient_name, patient_phone, appointment_date, slot_time, s"id, client_id, patient_name, patient_phone, appointment_date, slot_time, status, created_at, cancelled_at"", desc=True)
+        .select("id, client_id, patient_name, patient_phone, appointment_date, slot_time, status, created_at, cancelled_at")
+        .eq("client_id", client_id)
+        .order("created_at", desc=True)
         .limit(limit)
         .execute()
     )
-    rows = result.data or []
-    return [r for r in rows if r.get("client_id") == client_id]
+    return result.data or []
 
 
 def clear_custom_schedule(client_id: int, date: str) -> bool:
@@ -1112,7 +1115,7 @@ def is_new_patient(client_id: int, phone: str, current_appt_id: int | None = Non
 
 def get_appointments_for_intake_preview(client_id: int) -> list[dict]:
     """
-    Return confirmed appointments whose slot is 25–35 minutes from now
+    Return confirmed appointments whose slot is 25-35 minutes from now
     and whose intake_preview_sent flag is False.
     """
     db_c = get_db()
@@ -1297,3 +1300,20 @@ def _parse_appt_datetime(appt: dict) -> datetime | None:
         ).replace(tzinfo=_IST)
     except Exception:
         return None
+
+
+def count_appointments_since(client_id: int, since_date: str) -> int:
+    """Return number of confirmed/completed appointments for client_id on or after since_date (YYYY-MM-DD)."""
+    try:
+        db = get_db()
+        result = (
+            db.table("appointments")
+            .select("id", count="exact")
+            .eq("client_id", client_id)
+            .in_("status", ["confirmed", "completed"])
+            .gte("appointment_date", since_date)
+            .execute()
+        )
+        return result.count or 0
+    except Exception:
+        return 0

@@ -442,6 +442,103 @@ _DOCTOR_FEATURE_NAMES: dict = {
     "clear_day_schedule":  "Custom Day Schedule",
 }
 
+# ── Upsell messages (shown when doctor hits a plan-gated feature) ─────────────
+
+def _upsell_reply(fn_name: str, current_plan: str) -> str:
+    """Return a rich WhatsApp upsell nudge for a plan-gated doctor function."""
+    from config import settings as _s
+    upgrade_url = f"{_s.SERVER_URL}/signup"
+
+    # Pro-gated features (Starter → Pro)
+    _PRO_NUDGES = {
+        "update_clinic_info": (
+            "✏️ *Update Clinic Info*",
+            "Keep your clinic name, address, and phone always accurate — patients see this on every booking.",
+        ),
+        "broadcast_message": (
+            "📢 *Broadcast to All Patients*",
+            "Send holiday notices, health tips, or important announcements to all registered patients in one tap.",
+        ),
+    }
+
+    # Suite-gated features (Pro → Suite)
+    _SUITE_NUDGES = {
+        "add_clinic_note":   ("📝 *AI Knowledge Notes*", "Train the booking bot with clinic-specific rules — allergies policy, special instructions, anything."),
+        "list_clinic_notes": ("📝 *AI Knowledge Notes*", "Train the booking bot with clinic-specific rules — allergies policy, special instructions, anything."),
+        "remove_clinic_note":("📝 *AI Knowledge Notes*", "Train the booking bot with clinic-specific rules — allergies policy, special instructions, anything."),
+        "set_day_schedule":  ("🗓️ *Custom Day Schedule*", "Override clinic hours for any specific date — perfect for conferences, holidays, or half-days."),
+        "clear_day_schedule":("🗓️ *Custom Day Schedule*", "Override clinic hours for any specific date — perfect for conferences, holidays, or half-days."),
+    }
+
+    if fn_name in _PRO_NUDGES:
+        title, benefit = _PRO_NUDGES[fn_name]
+        return (
+            f"🔒 {title} is a *Pro Plan* feature.\n\n"
+            f"{benefit}\n\n"
+            f"*Pro Plan — ₹{_s.PRICE_PRO:,}/mo* also includes:\n"
+            f"  ✅ Patient self-cancel & reschedule via WhatsApp\n"
+            f"  ✅ Auto waitlist when slots fill up\n"
+            f"  ✅ 2-day follow-up message after every visit\n"
+            f"  ✅ Update clinic info from WhatsApp\n"
+            f"  ✅ Broadcast messages to all patients\n\n"
+            f"👉 Upgrade now → {upgrade_url}\n"
+            f"   or reply *UPGRADE* and I'll send the link."
+        )
+    elif fn_name in _SUITE_NUDGES:
+        title, benefit = _SUITE_NUDGES[fn_name]
+        return (
+            f"🔒 {title} is a *Suite Plan* feature.\n\n"
+            f"{benefit}\n\n"
+            f"*Suite Plan — ₹{_s.PRICE_SUITE:,}/mo* also includes:\n"
+            f"  ✅ Everything in Pro\n"
+            f"  ✅ Custom clinic hours per day\n"
+            f"  ✅ AI knowledge notes for the bot\n"
+            f"  ✅ Daily morning schedule on WhatsApp\n"
+            f"  ✅ Monthly automated invoice to your phone\n\n"
+            f"👉 Upgrade now → {upgrade_url}\n"
+            f"   or reply *UPGRADE* and I'll send the link."
+        )
+    else:
+        required = "Suite" if fn_name in (_DOCTOR_SUITE_FNS - _DOCTOR_PRO_FNS) else "Pro"
+        feature  = _DOCTOR_FEATURE_NAMES.get(fn_name, fn_name.replace("_", " ").title())
+        return (
+            f"🔒 *{feature}* requires the *{required} Plan*.\n\n"
+            f"Reply *UPGRADE* to get the upgrade link, or visit:\n{upgrade_url}"
+        )
+
+
+def _upgrade_plan_card() -> str:
+    """Full plan comparison card — sent when doctor types UPGRADE / pricing / plans."""
+    from config import settings as _s
+    upgrade_url = f"{_s.SERVER_URL}/signup"
+    return (
+        f"🚀 *Clinic AI Agent — Plan Comparison*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🟢 *Starter — ₹{_s.PRICE_STARTER:,}/mo*\n"
+        f"  • WhatsApp appointment booking\n"
+        f"  • Slot management (block/unblock)\n"
+        f"  • Appointment reminders (24h + 1h)\n"
+        f"  • View daily schedule\n\n"
+        f"⭐ *Pro — ₹{_s.PRICE_PRO:,}/mo*\n"
+        f"  Everything in Starter, plus:\n"
+        f"  • Patient self-cancel & reschedule\n"
+        f"  • Auto waitlist for full slots\n"
+        f"  • 2-day post-visit follow-up\n"
+        f"  • Update clinic info via WhatsApp\n"
+        f"  • Broadcast to all patients\n\n"
+        f"💎 *Suite — ₹{_s.PRICE_SUITE:,}/mo*\n"
+        f"  Everything in Pro, plus:\n"
+        f"  • Custom hours per day\n"
+        f"  • AI knowledge notes for the bot\n"
+        f"  • Daily morning schedule summary\n"
+        f"  • Monthly automated invoice\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👉 *Upgrade here:*\n{upgrade_url}"
+    )
+
+
+_UPGRADE_KEYWORDS = frozenset({"upgrade", "pricing", "plans", "plan", "cost", "price", "features"})
+
 
 def _get_doctor_tools(plan: str) -> list[dict]:
     """Return doctor tool list filtered to the client's subscription plan."""
@@ -758,20 +855,9 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
     else:
         _allowed_fns = _DOCTOR_STARTER_FNS
     if fn_name not in _allowed_fns:
-        _required = "Suite" if fn_name in (_DOCTOR_SUITE_FNS - _DOCTOR_PRO_FNS) else "Pro"
-        _feature  = _DOCTOR_FEATURE_NAMES.get(fn_name, fn_name.replace("_", " ").title())
         return json.dumps({
             "upgrade_required": True,
-            "reply": (
-                f"⚠️ *{_feature}* is not available on your current "
-                f"*{_plan_tier.title()} Plan*.
-
-"
-                f"U0001f680 To use this feature, please upgrade to the *{_required} Plan*.
-
-"
-                f"Contact your administrator to upgrade your subscription."
-            ),
+            "reply": _upsell_reply(fn_name, _plan_tier),
         })
 
     if fn_name == "check_available_slots":
@@ -1011,6 +1097,11 @@ def _build_system_prompt(client: dict) -> str:
 - If a patient wants to RESCHEDULE: call get_my_appointment, ask preferred new date, check_available_slots, let them pick, confirm, then call reschedule_appointment.
 - Always confirm before cancelling or rescheduling — these are irreversible.
 """
+    else:
+        # Starter: patients cannot self-cancel/reschedule — guide them to call, which nudges doctor to upgrade
+        cancel_reschedule_rules = f"""
+- If a patient asks to CANCEL or RESCHEDULE, politely say: "Online cancellations aren't available at {clinic_name} right now. Please call the clinic directly to make changes." Do NOT try to cancel or modify the appointment.
+"""
 
     notes = db.get_clinic_notes(client_id)
     custom_notes_section = ""
@@ -1114,6 +1205,15 @@ def _is_doctor(phone: str, client: dict) -> bool:
 
 async def _get_doctor_reply(phone: str, user_text: str, client: dict) -> tuple[str, dict | None]:
     client_id = client["id"]
+
+    # ── Fast-path: upgrade / pricing keyword ────────────────────────────────
+    _lower = user_text.strip().lower().rstrip("?!")
+    if _lower in _UPGRADE_KEYWORDS or any(kw in _lower.split() for kw in _UPGRADE_KEYWORDS):
+        reply = _upgrade_plan_card()
+        db.save_message(client_id, phone, "user", user_text)
+        db.save_message(client_id, phone, "assistant", reply)
+        return reply, None
+
     history   = db.get_conversation_history(client_id, phone, limit=6)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _build_doctor_prompt(client)},

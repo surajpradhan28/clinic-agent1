@@ -645,6 +645,115 @@ async def _run_expiry_check() -> None:
         logger.error("[Scheduler] Expiry check error: %s", exc, exc_info=True)
 
 
+# ── Job 2e: Monthly usage-based upsell nudge ─────────────────────────────────
+
+# Thresholds: if a clinic crosses these appointments in the last 30 days, nudge.
+_UPSELL_THRESHOLD_STARTER = 40   # Starter → nudge about Pro
+_UPSELL_THRESHOLD_PRO     = 80   # Pro     → nudge about Suite
+
+
+async def _run_upsell_nudges() -> None:
+    """
+    Runs on the 5th of every month at 9:00 AM IST (3:30 UTC).
+    For Starter/Pro clinics that hit the appointment volume threshold
+    last month, send the doctor a WhatsApp upgrade nudge.
+
+    Keeps it to one nudge per month per clinic (only fires if last_upsell_sent
+    is NULL or > 30 days ago — tracked in clinic_settings as 'last_upsell_sent').
+    """
+    logger.info("[Scheduler] Running upsell nudges job…")
+    try:
+        from calendar import monthrange as _mr
+        now       = datetime.now(_IST)
+        # Count appointments in the last 30 days
+        since_dt  = now - timedelta(days=30)
+        since_str = since_dt.strftime("%Y-%m-%d")
+
+        upgrade_url = f"{settings.SERVER_URL}/signup"
+
+        clients = db.get_all_active_clients()
+        for client in clients:
+            try:
+                plan         = (client.get("plan") or "starter").lower()
+                client_id    = client["id"]
+                doctor_phone = (client.get("contact_phone") or "").strip()
+                client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+                client_token = client.get("whatsapp_token") or None
+
+                if plan not in ("starter", "pro"):
+                    continue   # Suite is top-tier — nothing to upsell
+                if not doctor_phone:
+                    continue
+
+                # Check if we already nudged this month
+                _settings = db.get_all_clinic_settings(client_id)
+                last_nudge_str = _settings.get("last_upsell_sent", "")
+                if last_nudge_str:
+                    try:
+                        last_nudge = datetime.fromisoformat(last_nudge_str)
+                        if (now - last_nudge).days < 28:
+                            continue   # Already nudged this month
+                    except ValueError:
+                        pass
+
+                # Count appointments in last 30 days
+                appt_count = db.count_appointments_since(client_id, since_str)
+
+                threshold = _UPSELL_THRESHOLD_STARTER if plan == "starter" else _UPSELL_THRESHOLD_PRO
+                if appt_count < threshold:
+                    continue
+
+                # Build nudge message
+                clinic_name = _settings.get("clinic_name") or client.get("clinic_name") or "your clinic"
+                if plan == "starter":
+                    msg = (
+                        f"🎉 *{clinic_name}* is growing fast!\n\n"
+                        f"You've had *{appt_count} appointments* in the last 30 days — "
+                        f"that's brilliant! 🚀\n\n"
+                        f"With this volume, your patients would benefit from:\n"
+                        f"  ✅ Self-cancel & reschedule via WhatsApp\n"
+                        f"  ✅ Auto waitlist when slots fill up\n"
+                        f"  ✅ Post-visit follow-up messages\n"
+                        f"  ✅ Broadcast to all patients\n\n"
+                        f"*Pro Plan — ₹{settings.PRICE_PRO:,}/mo*\n"
+                        f"👉 Upgrade: {upgrade_url}\n\n"
+                        f"Reply *UPGRADE* for more details."
+                    )
+                else:  # pro
+                    msg = (
+                        f"🎉 *{clinic_name}* is at Pro level — and beyond!\n\n"
+                        f"*{appt_count} appointments* in 30 days — you're running a serious practice. 🏆\n\n"
+                        f"Suite unlocks the full power:\n"
+                        f"  ✅ Custom clinic hours per day\n"
+                        f"  ✅ AI knowledge notes for the bot\n"
+                        f"  ✅ Daily morning schedule on WhatsApp\n"
+                        f"  ✅ Monthly automated invoice\n\n"
+                        f"*Suite Plan — ₹{settings.PRICE_SUITE:,}/mo*\n"
+                        f"👉 Upgrade: {upgrade_url}\n\n"
+                        f"Reply *UPGRADE* for a full plan comparison."
+                    )
+
+                success = await whatsapp.send_template_or_text(
+                    phone=doctor_phone,
+                    template_name="clinic_upsell_nudge",
+                    body_params=[clinic_name, str(appt_count), upgrade_url],
+                    fallback_text=msg,
+                    phone_id=client_pid,
+                    token=client_token,
+                )
+                if success:
+                    # Record nudge timestamp in clinic_settings
+                    db.update_clinic_setting(client_id, "last_upsell_sent", now.isoformat())
+                    logger.info("[Scheduler] Upsell nudge sent to client=%s (plan=%s, appts=%d)",
+                                client_id, plan, appt_count)
+
+            except Exception as exc:
+                logger.error("[Scheduler] Upsell nudge error (client=%s): %s", client.get("id"), exc)
+
+    except Exception as exc:
+        logger.error("[Scheduler] Upsell nudge job error: %s", exc, exc_info=True)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -683,6 +792,12 @@ def start() -> None:
         _run_expiry_check,
         trigger=CronTrigger(hour=2, minute=0),   # 2am UTC daily (7:30am IST)
         id="expiry_check", replace_existing=True, misfire_grace_time=1800,
+    )
+    # ── Upsell nudge: 5th of every month at 9:00 AM IST (3:30 UTC) ──
+    scheduler.add_job(
+        _run_upsell_nudges,
+        trigger=CronTrigger(day=5, hour=3, minute=30, timezone="UTC"),
+        id="upsell_nudges", replace_existing=True, misfire_grace_time=3600,
     )
 
     scheduler.start()
