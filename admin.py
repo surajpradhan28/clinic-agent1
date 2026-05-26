@@ -223,6 +223,19 @@ async def handle_admin_message(
             else:
                 await whatsapp.send_text(phone, f"❌ Reward #{rid} not found or already applied.", phone_id=pid)
 
+    # ── invoice ───────────────────────────────────────────────────────────────
+    elif lower.startswith("invoice:"):
+        cid = _parse_int(cmd, "invoice:")
+        if cid is None:
+            await whatsapp.send_text(
+                phone,
+                "❌ Usage: `invoice: <client_id>`\nExample: `invoice: 3`\n\n"
+                "Generates and sends an invoice for the current month to the clinic.",
+                phone_id=pid,
+            )
+        else:
+            await _send_invoice_now(phone, cid, pid)
+
     # ── unknown ───────────────────────────────────────────────────────────────
     else:
         await whatsapp.send_text(
@@ -252,9 +265,127 @@ def _help_text() -> str:
         "\U0001f517 *dashboard: <id>* — get clinic dashboard URL\n\n"
         "🤝 *referrals* — referral leaderboard + pending rewards\n"
         "*apply reward: <reward_id>* — credit 1 free month to referrer\n\n"
+        "🧾 *invoice: <id>* — generate & send invoice now\n\n"
         "📊 Web dashboard:\n"
         f"/admin?key=YOUR_SECRET"
     )
+
+
+async def _send_invoice_now(admin_phone: str, client_id: int, pid: str) -> None:
+    """
+    Admin command: generate and send an invoice for the current month to the clinic.
+    Works like the monthly scheduler job but is triggered on-demand.
+    """
+    from calendar import monthrange as _mr
+    from datetime import datetime as _dt
+
+    try:
+        client = db.get_client_by_id(client_id)
+        if not client:
+            await whatsapp.send_text(admin_phone, f"❌ Client #{client_id} not found.", phone_id=pid)
+            return
+
+        now        = _dt.now()
+        year, month = now.year, now.month
+        last_day   = _mr(year, month)[1]
+        period_start = f"{year:04d}-{month:02d}-01"
+        period_end   = f"{year:04d}-{month:02d}-{last_day:02d}"
+        due_date     = (now + timedelta(days=settings.INVOICE_DUE_DAYS)).strftime("%Y-%m-%d")
+
+        plan_prices = {
+            "starter": settings.PRICE_STARTER,
+            "pro":     settings.PRICE_PRO,
+            "suite":   settings.PRICE_SUITE,
+        }
+
+        plan   = (client.get("plan") or "starter").lower()
+        amount = float(plan_prices.get(plan, settings.PRICE_STARTER))
+
+        # Check if already exists for this period
+        if db.invoice_exists(client_id, period_start):
+            # Fetch existing invoice details instead of creating a duplicate
+            existing = db.get_invoices_for_client(client_id, limit=1)
+            inv_num = existing[0]["invoice_number"] if existing else "?"
+            await whatsapp.send_text(
+                admin_phone,
+                f"⚠️ Invoice already exists for client #{client_id} this month.\n"
+                f"Invoice #: *{inv_num}*\n"
+                f"Use `/invoice/<token>` URL to view it.",
+                phone_id=pid,
+            )
+            return
+
+        clinic_name = (
+            db.get_all_clinic_settings(client_id).get("clinic_name")
+            or client.get("clinic_name", "Your Clinic")
+        )
+
+        invoice = db.create_invoice(
+            client_id    = client_id,
+            period_start = period_start,
+            period_end   = period_end,
+            due_date     = due_date,
+            amount       = amount,
+            plan         = plan,
+        )
+
+        invoice_url = f"{settings.SERVER_URL}/invoice/{invoice['invoice_token']}"
+        plan_label  = plan.title()
+        month_name  = now.strftime("%B %Y")
+        due_display = _dt.strptime(due_date, "%Y-%m-%d").strftime("%d %B %Y")
+        amount_str  = f"₹{amount:,.0f}"
+
+        # Try Razorpay link
+        razorpay_url = None
+        try:
+            from main import _create_razorpay_link
+            razorpay_url = await _create_razorpay_link(invoice, client)
+        except Exception as rz_exc:
+            logger.warning("[Admin/Invoice] Razorpay link failed for client=%s: %s", client_id, rz_exc)
+
+        pay_line = (
+            f"\n\n💳 Pay now:\n{razorpay_url}"
+            if razorpay_url
+            else f"\n\nUPI: *{settings.INVOICE_UPI_ID}*"
+        )
+
+        # Send to clinic contact phone
+        contact_phone = (client.get("contact_phone") or "").strip()
+        clinic_msg = (
+            f"🧾 *Invoice for {month_name}*\n\n"
+            f"Hi! Here is your monthly invoice for *{clinic_name}*.\n\n"
+            f"📋 Invoice No.: *{invoice['invoice_number']}*\n"
+            f"📦 Plan: *{plan_label}*\n"
+            f"💰 Amount: *{amount_str}*\n"
+            f"📅 Due by: *{due_display}*\n\n"
+            f"🔗 View invoice:\n{invoice_url}"
+            f"{pay_line}\n\n"
+            f"Thank you! 🙏"
+        )
+        client_pid = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+
+        if contact_phone:
+            await whatsapp.send_text(contact_phone, clinic_msg, phone_id=client_pid)
+
+        # Confirm to admin
+        await whatsapp.send_text(
+            admin_phone,
+            f"✅ Invoice generated for *{clinic_name}* (#{client_id})\n\n"
+            f"📋 Invoice No.: *{invoice['invoice_number']}*\n"
+            f"💰 Amount: *{amount_str}*  |  Plan: *{plan_label}*\n"
+            f"📅 Due by: *{due_display}*\n"
+            f"{'💳 Razorpay link created ✓' if razorpay_url else '⚠️ Razorpay link not created'}\n\n"
+            f"🔗 {invoice_url}",
+            phone_id=pid,
+        )
+
+    except Exception as exc:
+        logger.error("[Admin/Invoice] Unexpected error for client=%s: %s", client_id, exc, exc_info=True)
+        await whatsapp.send_text(
+            admin_phone,
+            f"❌ Failed to generate invoice for client #{client_id}: {exc}",
+            phone_id=pid,
+        )
 
 
 def _referrals_summary() -> str:
