@@ -1213,12 +1213,23 @@ def get_invoice_by_token(token: str) -> dict | None:
     db_c = get_db()
     result = (
         db_c.table("invoices")
-        .select("*, clients(clinic_name, contact_name, contact_phone, contact_email)")
+        .select("*, clients(name, doctor_name, contact_phone, contact_email)")
         .eq("invoice_token", token)
         .limit(1)
         .execute()
     )
-    return result.data[0] if result.data else None
+    if not result.data:
+        return None
+    row = result.data[0]
+    # Enrich with clinic_name from clinic_settings (the canonical display name)
+    client_id = row.get("client_id")
+    if client_id:
+        clinic_settings = get_all_clinic_settings(client_id)
+        row["_clinic_name"]  = clinic_settings.get("clinic_name") or (row.get("clients") or {}).get("name", "")
+        row["_doctor_name"]  = clinic_settings.get("doctor_name") or (row.get("clients") or {}).get("doctor_name", "")
+        row["_clinic_address"] = clinic_settings.get("clinic_address", "")
+        row["_clinic_phone"]   = clinic_settings.get("clinic_phone", "")
+    return row
 
 
 def get_invoices_for_client(client_id: int, limit: int = 12) -> list[dict]:
