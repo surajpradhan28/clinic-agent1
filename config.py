@@ -86,6 +86,14 @@ class Settings:
     PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
     PRICE_SUITE:   int = int(os.getenv("PRICE_SUITE",   "2999"))
 
+    # ── Razorpay (UPI auto-pay) ───────────────────────────────────────────────
+    # Create at https://dashboard.razorpay.com → Settings → API Keys
+    # Leave blank to skip Razorpay and fall back to manual UPI.
+    RAZORPAY_KEY_ID:         str = os.getenv("RAZORPAY_KEY_ID",         "")
+    RAZORPAY_KEY_SECRET:     str = os.getenv("RAZORPAY_KEY_SECRET",     "")
+    # Webhook secret set at Razorpay Dashboard → Webhooks → Secret
+    RAZORPAY_WEBHOOK_SECRET: str = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+
     # ── Invoice settings ──────────────────────────────────────────────────────
     # Days after 1st of month before invoice is considered overdue
     INVOICE_DUE_DAYS: int = int(os.getenv("INVOICE_DUE_DAYS", "5"))

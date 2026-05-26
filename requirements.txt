@@ -7,6 +7,9 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 
+# Payment gateway
+razorpay==1.4.2
+
 # OpenAI
 openai==1.51.0
 

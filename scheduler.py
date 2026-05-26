@@ -360,6 +360,22 @@ async def _run_monthly_invoices() -> None:
             due_display = datetime.strptime(due_date, "%Y-%m-%d").strftime("%d %B %Y")
             amount_str  = f"₹{amount:,.0f}"
 
+            # ── Create Razorpay payment link (if configured) ──────────────────
+            razorpay_url = None
+            try:
+                from main import _create_razorpay_link
+                client_row_for_rz = db.get_client_by_id(client_id) or {}
+                razorpay_url = await _create_razorpay_link(invoice, client_row_for_rz)
+            except Exception as rz_exc:
+                logger.warning("[Invoices] Razorpay link failed for client=%s: %s", client_id, rz_exc)
+
+            # Payment CTA: Razorpay link if available, else raw UPI
+            pay_line = (
+                f"\n\n💳 Pay now (UPI / Card / Netbanking):\n{razorpay_url}"
+                if razorpay_url
+                else f"\n\nPlease pay via UPI to *{settings.INVOICE_UPI_ID}* and send the screenshot to confirm."
+            )
+
             fallback_msg = (
                 f"🧾 *Invoice for {month_name}*\n\n"
                 f"Hi! Here is your monthly invoice for *{clinic_name}*.\n\n"
@@ -367,8 +383,8 @@ async def _run_monthly_invoices() -> None:
                 f"📦 Plan: *{plan_label}*\n"
                 f"💰 Amount: *{amount_str}*\n"
                 f"📅 Due by: *{due_display}*\n\n"
-                f"🔗 View invoice:\n{invoice_url}\n\n"
-                f"Please pay via UPI to *{settings.INVOICE_UPI_ID}* and send us the screenshot to confirm renewal. "
+                f"🔗 View invoice:\n{invoice_url}"
+                f"{pay_line}\n\n"
                 f"Thank you! 🙏"
             )
 

@@ -55,6 +55,78 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ── Razorpay client (lazy-init, only when KEY_ID is configured) ───────────────
+
+def _razorpay_client():
+    """Return a razorpay.Client or None if Razorpay is not configured."""
+    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+        return None
+    try:
+        import razorpay  # optional dependency
+        return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+    except ImportError:
+        logger.warning("razorpay package not installed — payment links disabled")
+        return None
+
+
+async def _create_razorpay_link(invoice: dict, client_row: dict) -> str | None:
+    """
+    Create a Razorpay Payment Link for an invoice.
+    Stores link_id and short_url on the invoice row.
+    Returns the short_url or None if Razorpay is not configured / creation fails.
+    """
+    rz = _razorpay_client()
+    if rz is None:
+        return None
+
+    amount_paise = int(float(invoice["amount"]) * 100)   # Razorpay uses paise
+    doctor_name  = client_row.get("doctor_name") or client_row.get("contact_name") or ""
+    email        = client_row.get("contact_email") or ""
+    phone        = client_row.get("contact_phone") or ""
+    token        = invoice["invoice_token"]
+    description  = (
+        f"Clinic AI Agent — {invoice.get('plan','').title()} Plan — "
+        f"{invoice.get('period_start','')[:7]}"
+    )
+    callback_url = f"{settings.SERVER_URL}/invoice/{token}"
+
+    try:
+        # Payment link expires 3 days after due_date
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        due = _dt.strptime(invoice["due_date"], "%Y-%m-%d").replace(tzinfo=_tz.utc)
+        expire_ts = int((due + _td(days=3)).timestamp())
+
+        link = rz.payment_link.create({
+            "amount":          amount_paise,
+            "currency":        "INR",
+            "description":     description,
+            "reference_id":    token,           # our unique identifier
+            "callback_url":    callback_url,
+            "callback_method": "get",
+            "expire_by":       expire_ts,
+            "customer": {
+                "name":    doctor_name,
+                "email":   email,
+                "contact": phone,
+            },
+            "notify":           {"sms": False, "email": False},
+            "reminder_enable":  False,
+            "options": {
+                "checkout": {"name": settings.INVOICE_BUSINESS_NAME or "Clinic AI Agent"}
+            },
+        })
+        link_id  = link.get("id", "")
+        link_url = link.get("short_url", "")
+        if link_id:
+            db.update_invoice_payment_link(invoice["id"], link_id, link_url)
+            logger.info("[Razorpay] Payment link created: %s → %s", link_id, link_url)
+        return link_url or None
+    except Exception as exc:
+        logger.error("[Razorpay] Failed to create payment link for invoice %s: %s",
+                     invoice.get("id"), exc)
+        return None
+
+
 # ── Webhook deduplication (in-memory, 5-minute TTL) ──────────────────────────
 # WhatsApp Cloud API sometimes delivers the same webhook event more than once.
 # We track recently-seen message_ids so duplicate deliveries are silently dropped.
@@ -789,6 +861,22 @@ async def invoice_view(token: str):
           <span style="color:#2E7D32;font-size:18px;font-weight:bold;">✅ PAID{(' — ' + paid_at) if paid_at else ''}</span>
         </div>"""
 
+    # Build payment section (pre-computed to avoid nested f-string issues)
+    rzp_url = invoice.get("razorpay_payment_link_url", "")
+    if rzp_url and status != "PAID":
+        payment_section = (
+            f'<p style="margin-bottom:14px;">Please pay before <strong>{due_str}</strong> to avoid service interruption.</p>'
+            f'<a href="{rzp_url}" target="_blank" class="no-print" style="display:inline-block;background:linear-gradient(135deg,#1A3A5C,#2E75B6);color:#fff;text-decoration:none;padding:13px 36px;border-radius:10px;font-size:16px;font-weight:700;letter-spacing:.3px;margin-bottom:12px;">&#x1F4B3; Pay Now &mdash; {amount_str}</a>'
+            f'<p style="font-size:12px;color:#888;margin-top:6px;">Secure payment powered by Razorpay &middot; UPI / Cards / Netbanking</p>'
+        )
+    else:
+        payment_section = (
+            f'<p>Please pay before <strong>{due_str}</strong> to avoid service interruption.<br><br>'
+            f'UPI (Google Pay / PhonePe / Paytm):<br>'
+            f'<span class="upi">{settings.INVOICE_UPI_ID}</span><br><br>'
+            f'After paying, WhatsApp the screenshot to confirm your renewal.</p>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -951,13 +1039,8 @@ async def invoice_view(token: str):
       </table>
 
       <div class="payment-box">
-        <h3>💳 Payment Instructions</h3>
-        <p>
-          Please pay before <strong>{due_str}</strong> to avoid service interruption.<br><br>
-          UPI (Google Pay / PhonePe / Paytm):<br>
-          <span class="upi">{settings.INVOICE_UPI_ID}</span><br><br>
-          After paying, please WhatsApp the payment screenshot to confirm your renewal.
-        </p>
+        <h3>💳 Payment</h3>
+        {payment_section}
       </div>
 
       <p class="no-print" style="text-align:center;margin-bottom:20px;">
@@ -977,6 +1060,141 @@ async def invoice_view(token: str):
 </html>"""
 
     return HTMLResponse(content=html)
+
+
+@app.post("/razorpay/webhook")
+async def razorpay_webhook(request: Request):
+    """
+    Razorpay payment webhook — auto-marks invoices paid.
+
+    Setup in Razorpay Dashboard → Webhooks:
+      URL:    https://<your-railway-domain>/razorpay/webhook
+      Events: payment_link.paid
+      Secret: set RAZORPAY_WEBHOOK_SECRET env var to the same value
+
+    On payment_link.paid:
+      1. Verify HMAC-SHA256 signature
+      2. Find invoice by razorpay_payment_link_id (reference_id = invoice_token)
+      3. Mark invoice paid + store razorpay_payment_id
+      4. Record payment in payments table
+      5. Activate client subscription (trial → active)
+      6. WhatsApp doctor "✅ Payment received"
+      7. Notify admin
+    """
+    raw_body = await request.body()
+
+    # ── Signature verification ────────────────────────────────────────────────
+    if settings.RAZORPAY_WEBHOOK_SECRET:
+        sig = request.headers.get("X-Razorpay-Signature", "")
+        expected = hmac.new(
+            settings.RAZORPAY_WEBHOOK_SECRET.encode(),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            logger.warning("[Razorpay] Webhook signature mismatch — rejecting")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        logger.warning("[Razorpay] RAZORPAY_WEBHOOK_SECRET not set — skipping signature check")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event = payload.get("event", "")
+    logger.info("[Razorpay] Webhook event: %s", event)
+
+    if event != "payment_link.paid":
+        return JSONResponse({"status": "ignored", "event": event})
+
+    # ── Extract identifiers ───────────────────────────────────────────────────
+    try:
+        pl_entity  = payload["payload"]["payment_link"]["entity"]
+        pay_entity = payload["payload"]["payment"]["entity"]
+        link_id    = pl_entity["id"]            # plink_xxx
+        ref_id     = pl_entity["reference_id"]  # our invoice_token
+        rzp_pay_id = pay_entity["id"]           # pay_xxx
+        amount_paid_paise = int(pay_entity.get("amount", 0))
+    except (KeyError, TypeError) as exc:
+        logger.error("[Razorpay] Malformed webhook payload: %s", exc)
+        raise HTTPException(status_code=400, detail="Malformed payload")
+
+    # ── Find invoice ──────────────────────────────────────────────────────────
+    # Try by payment link ID first, then fall back to reference_id (invoice_token)
+    invoice = db.get_invoice_by_razorpay_link(link_id)
+    if not invoice:
+        invoice = db.get_invoice_by_token(ref_id)
+    if not invoice:
+        logger.error("[Razorpay] Invoice not found for link_id=%s ref_id=%s", link_id, ref_id)
+        return JSONResponse({"status": "invoice_not_found"})
+
+    if invoice["status"] == "paid":
+        logger.info("[Razorpay] Invoice %s already paid — skipping", invoice["id"])
+        return JSONResponse({"status": "already_paid"})
+
+    client_id  = invoice["client_id"]
+    amount_inr = amount_paid_paise / 100
+
+    # ── Mark invoice paid ─────────────────────────────────────────────────────
+    db.mark_invoice_paid(invoice["id"], client_id, razorpay_payment_id=rzp_pay_id)
+
+    # ── Record payment in payments table ──────────────────────────────────────
+    db.record_payment(
+        client_id=client_id,
+        amount=amount_inr,
+        method="razorpay",
+        notes=f"Auto-detected via Razorpay webhook. pay_id={rzp_pay_id}",
+    )
+
+    # ── Activate client if still on trial ────────────────────────────────────
+    client_row = db.get_client_by_id(client_id)
+    if client_row and client_row.get("status") in ("trial", "pending", "suspended"):
+        db.update_client_status(client_id, "active")
+        logger.info("[Razorpay] Client %s activated after payment", client_id)
+
+    # ── WhatsApp doctor: payment confirmed ────────────────────────────────────
+    if client_row:
+        doctor_phone  = client_row.get("contact_phone") or ""
+        client_pid    = client_row.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+        client_token  = client_row.get("whatsapp_token") or None
+        cli_settings  = db.get_all_clinic_settings(client_id)
+        doctor_name   = cli_settings.get("doctor_name") or client_row.get("doctor_name") or "Doctor"
+        plan_label    = invoice.get("plan", "").title()
+        inv_num       = invoice.get("invoice_number", "")
+
+        if doctor_phone:
+            confirm_msg = (
+                f"✅ *Payment Received — Thank you, Dr. {doctor_name}!*\n\n"
+                f"Invoice: *{inv_num}*\n"
+                f"Plan: *{plan_label}*\n"
+                f"Amount: *₹{amount_inr:,.0f}*\n"
+                f"Payment ID: `{rzp_pay_id}`\n\n"
+                f"Your Clinic AI Agent subscription is active. "
+                f"All features are running as usual. 🙏"
+            )
+            try:
+                await whatsapp.send_text(doctor_phone, confirm_msg, phone_id=client_pid, token=client_token)
+            except Exception as exc:
+                logger.warning("[Razorpay] WhatsApp confirm failed for client %s: %s", client_id, exc)
+
+        # Notify admin
+        if settings.ADMIN_PHONE:
+            clinic_name = cli_settings.get("clinic_name") or client_row.get("clinic_name") or f"Client {client_id}"
+            try:
+                await whatsapp.send_text(
+                    settings.ADMIN_PHONE,
+                    f"💰 *Auto-payment received!*\n\n"
+                    f"🏥 {clinic_name} [{client_id}]\n"
+                    f"📋 Invoice: {inv_num}\n"
+                    f"💵 ₹{amount_inr:,.0f} via Razorpay\n"
+                    f"🔑 {rzp_pay_id}",
+                )
+            except Exception:
+                pass
+
+    logger.info("[Razorpay] Invoice %s marked paid (₹%.0f, pay_id=%s)", invoice["id"], amount_inr, rzp_pay_id)
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/health")

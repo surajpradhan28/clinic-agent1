@@ -1235,17 +1235,52 @@ def get_invoices_for_client(client_id: int, limit: int = 12) -> list[dict]:
     return result.data or []
 
 
-def mark_invoice_paid(invoice_id: int, client_id: int) -> bool:
+def mark_invoice_paid(
+    invoice_id: int,
+    client_id: int,
+    razorpay_payment_id: str | None = None,
+) -> bool:
     """Mark an invoice as paid. Returns True if found and updated."""
     db_c = get_db()
+    update_data: dict = {"status": "paid", "paid_at": datetime.now(_IST).isoformat()}
+    if razorpay_payment_id:
+        update_data["razorpay_payment_id"] = razorpay_payment_id
     result = (
         db_c.table("invoices")
-        .update({"status": "paid", "paid_at": datetime.now(_IST).isoformat()})
+        .update(update_data)
         .eq("id", invoice_id)
         .eq("client_id", client_id)
         .execute()
     )
     return bool(result.data)
+
+
+def get_invoice_by_razorpay_link(link_id: str) -> dict | None:
+    """Find an invoice by its Razorpay payment_link_id. Used in the webhook handler."""
+    if not link_id:
+        return None
+    db_c = get_db()
+    result = (
+        db_c.table("invoices")
+        .select("*")
+        .eq("razorpay_payment_link_id", link_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def update_invoice_payment_link(
+    invoice_id: int,
+    link_id: str,
+    link_url: str,
+) -> None:
+    """Store the Razorpay payment link ID and short URL on an invoice."""
+    db_c = get_db()
+    db_c.table("invoices").update({
+        "razorpay_payment_link_id":  link_id,
+        "razorpay_payment_link_url": link_url,
+    }).eq("id", invoice_id).execute()
 
 
 def mark_overdue_invoices() -> int:
