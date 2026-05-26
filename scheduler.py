@@ -12,6 +12,8 @@ Jobs:
   4. daily_doctor_schedule — Morning schedule to doctor (daily cron)
   5. check_expiry          — Grace period + expiry warnings (daily cron at 2am UTC)
   6. intake_previews       — Patient intake card to doctor 30 min before appt (every 15 min)
+  7. trial_automation      — Welcome, 3-day nudge, 1-day warning, auto-suspend (daily 8:30 AM IST)
+  8. upsell_nudges         — Usage-based upgrade nudge (5th of month, 9 AM IST)
 """
 
 from __future__ import annotations
@@ -754,6 +756,156 @@ async def _run_upsell_nudges() -> None:
         logger.error("[Scheduler] Upsell nudge job error: %s", exc, exc_info=True)
 
 
+# ── Job 8: Trial automation ───────────────────────────────────────────────────
+
+async def _run_trial_automation() -> None:
+    """
+    Daily job at 8:30 AM IST (3:00 UTC).
+
+    For every clinic with status='trial' (and whatsapp_phone_id set):
+      1. Welcome message  — sent once when trial is first detected (flag: trial_welcome_sent)
+      2. 3-day nudge      — sent when ≤3 days remain (flag: trial_nudge_3d_sent)
+      3. 1-day warning    — sent when ≤1 day remains (flag: trial_warning_1d_sent)
+      4. Auto-suspend     — when trial_ends_at has passed: set status='suspended',
+                            send "trial ended" message (flag: trial_ended_sent)
+
+    State is tracked via clinic_settings keys so each message fires exactly once.
+    """
+    logger.info("[TrialAuto] Running trial automation…")
+    try:
+        all_clients  = db.list_all_clients()
+        trial_clients = [
+            c for c in all_clients
+            if c.get("status") == "trial" and c.get("trial_ends_at")
+        ]
+        if not trial_clients:
+            logger.info("[TrialAuto] No trial clients found.")
+            return
+
+        now_utc     = datetime.now(timezone.utc)
+        upgrade_url = f"{settings.SERVER_URL}/signup"
+
+        for client in trial_clients:
+            client_id    = client["id"]
+            doctor_phone = client.get("contact_phone") or ""
+            pid          = client.get("whatsapp_phone_id") or ""
+            token        = client.get("whatsapp_token") or None
+
+            # Skip clients not yet fully activated (no WhatsApp phone ID)
+            if not doctor_phone or not pid:
+                logger.debug("[TrialAuto] Client %s skipped — no phone/pid yet", client_id)
+                continue
+
+            cli_settings = db.get_all_clinic_settings(client_id)
+            doctor_name  = (
+                cli_settings.get("doctor_name")
+                or client.get("doctor_name")
+                or "Doctor"
+            )
+
+            try:
+                trial_ends = datetime.fromisoformat(
+                    client["trial_ends_at"].replace("Z", "+00:00")
+                )
+            except Exception:
+                logger.warning("[TrialAuto] Bad trial_ends_at for client %s", client_id)
+                continue
+
+            days_left  = (trial_ends - now_utc).days   # integer days remaining (negative = expired)
+            hours_left = (trial_ends - now_utc).total_seconds() / 3600
+
+            # ── Auto-suspend: trial has expired ──────────────────────────────
+            if hours_left < 0:
+                if not cli_settings.get("trial_ended_sent"):
+                    db.update_client_status(client_id, "suspended")
+                    msg = (
+                        f"😔 Hi Dr. {doctor_name},\n\n"
+                        f"Your 7-day free trial has ended and your Clinic AI Agent has been paused.\n\n"
+                        f"Don't worry — all your patient data and appointment history is safely stored. "
+                        f"You can pick up right where you left off.\n\n"
+                        f"*Reactivate in 2 minutes:*\n"
+                        f"👉 {upgrade_url}\n\n"
+                        f"Plans start at ₹{settings.PRICE_STARTER:,}/mo. "
+                        f"Reply *UPGRADE* anytime to see the options."
+                    )
+                    try:
+                        await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    except Exception as exc:
+                        logger.warning("[TrialAuto] Suspend notify failed for client %s: %s",
+                                       client_id, exc)
+                    db.update_clinic_setting(client_id, "trial_ended_sent", "true")
+                    logger.info("[TrialAuto] Client %s trial expired → suspended", client_id)
+                continue
+
+            # ── Welcome message (first run after activation) ─────────────────
+            if not cli_settings.get("trial_welcome_sent"):
+                trial_end_str = trial_ends.astimezone(_IST).strftime("%-d %b %Y")
+                msg = (
+                    f"🎉 Welcome to Clinic AI Agent, Dr. {doctor_name}!\n\n"
+                    f"Your *7-day free trial* is now active — full access, no credit card needed.\n\n"
+                    f"*What you can do right now:*\n"
+                    f"  📅 Book appointments for patients\n"
+                    f"  💬 Patients self-book via WhatsApp 24/7\n"
+                    f"  🔔 Automatic 24h & 1h patient reminders\n"
+                    f"  📋 Morning schedule every day at 7 AM\n"
+                    f"  🩺 Patient intake forms before appointments\n\n"
+                    f"Your trial ends on *{trial_end_str}*.\n\n"
+                    f"Type *HELP* to see all doctor commands. Let's go! 🚀"
+                )
+                try:
+                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    db.update_clinic_setting(client_id, "trial_welcome_sent", "true")
+                    logger.info("[TrialAuto] Welcome sent to client %s", client_id)
+                except Exception as exc:
+                    logger.warning("[TrialAuto] Welcome failed for client %s: %s", client_id, exc)
+                continue  # Only one message per run per client
+
+            # ── 1-day warning (checked before 3-day so it fires on day 1) ────
+            if hours_left <= 28 and not cli_settings.get("trial_warning_1d_sent"):
+                time_desc = "today" if days_left == 0 else "tomorrow"
+                msg = (
+                    f"🔔 *Last chance, Dr. {doctor_name}!*\n\n"
+                    f"Your free trial ends *{time_desc}*. After that, your clinic bot will pause.\n\n"
+                    f"Upgrade now to keep everything running without interruption:\n"
+                    f"👉 {upgrade_url}\n\n"
+                    f"Plans from ₹{settings.PRICE_STARTER:,}/mo — "
+                    f"your patient data will stay safe either way."
+                )
+                try:
+                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    db.update_clinic_setting(client_id, "trial_warning_1d_sent", "true")
+                    logger.info("[TrialAuto] 1-day warning sent to client %s", client_id)
+                except Exception as exc:
+                    logger.warning("[TrialAuto] 1d warning failed for client %s: %s", client_id, exc)
+                continue
+
+            # ── 3-day nudge ──────────────────────────────────────────────────
+            if days_left <= 3 and not cli_settings.get("trial_nudge_3d_sent"):
+                day_str   = f"{days_left} day{'s' if days_left != 1 else ''}"
+                end_str   = trial_ends.astimezone(_IST).strftime("%-d %b")
+                msg = (
+                    f"⏳ Dr. {doctor_name}, your free trial ends in *{day_str}* ({end_str}).\n\n"
+                    f"Upgrade before it ends to keep your clinic bot running:\n\n"
+                    f"🟢 *Starter — ₹{settings.PRICE_STARTER:,}/mo*\n"
+                    f"   AI booking + patient reminders\n\n"
+                    f"🔵 *Pro — ₹{settings.PRICE_PRO:,}/mo*\n"
+                    f"   + Self-cancel/reschedule + broadcast messages\n\n"
+                    f"🟣 *Suite — ₹{settings.PRICE_SUITE:,}/mo*\n"
+                    f"   + Custom AI notes + waitlist + intake forms\n\n"
+                    f"👉 Upgrade now → {upgrade_url}\n"
+                    f"   or reply *UPGRADE* to see the plan comparison."
+                )
+                try:
+                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    db.update_clinic_setting(client_id, "trial_nudge_3d_sent", "true")
+                    logger.info("[TrialAuto] 3-day nudge sent to client %s", client_id)
+                except Exception as exc:
+                    logger.warning("[TrialAuto] 3d nudge failed for client %s: %s", client_id, exc)
+
+    except Exception as exc:
+        logger.error("[TrialAuto] Job failed: %s", exc, exc_info=True)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -798,6 +950,12 @@ def start() -> None:
         _run_upsell_nudges,
         trigger=CronTrigger(day=5, hour=3, minute=30, timezone="UTC"),
         id="upsell_nudges", replace_existing=True, misfire_grace_time=3600,
+    )
+    # ── Trial automation: daily at 8:30 AM IST (3:00 UTC) ──
+    scheduler.add_job(
+        _run_trial_automation,
+        trigger=CronTrigger(hour=3, minute=0, timezone="UTC"),
+        id="trial_automation", replace_existing=True, misfire_grace_time=1800,
     )
 
     scheduler.start()

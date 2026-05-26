@@ -113,8 +113,60 @@ async def handle_admin_message(
         if cid is None:
             await whatsapp.send_text(phone, "❌ Usage: `activate: <client_id>`", phone_id=pid)
         else:
-            db.update_client_status(cid, "active")
-            await whatsapp.send_text(phone, f"🟢 Client {cid} activated.", phone_id=pid)
+            client_row = db.get_client_by_id(cid)
+            if not client_row:
+                await whatsapp.send_text(phone, f"❌ Client {cid} not found.", phone_id=pid)
+            else:
+                # Web-signup clinics have trial_ends_at set — activate as 'trial'
+                # Admin-created clinics without trial window go straight to 'active'
+                new_status = "trial" if client_row.get("trial_ends_at") else "active"
+                db.update_client_status(cid, new_status)
+                status_label = "🟡 trial started" if new_status == "trial" else "🟢 activated"
+                await whatsapp.send_text(phone, f"{status_label} — Client {cid}.", phone_id=pid)
+
+                # Send instant welcome WhatsApp to doctor if not already sent
+                if new_status == "trial":
+                    doctor_phone = client_row.get("contact_phone") or ""
+                    client_pid   = client_row.get("whatsapp_phone_id") or ""
+                    client_token = client_row.get("whatsapp_token") or None
+                    if doctor_phone and client_pid:
+                        cli_settings = db.get_all_clinic_settings(cid)
+                        doctor_name  = (
+                            cli_settings.get("doctor_name")
+                            or client_row.get("doctor_name")
+                            or "Doctor"
+                        )
+                        if not cli_settings.get("trial_welcome_sent"):
+                            from datetime import datetime, timezone, timedelta
+                            _IST = timezone(timedelta(hours=5, minutes=30))
+                            try:
+                                trial_ends = datetime.fromisoformat(
+                                    client_row["trial_ends_at"].replace("Z", "+00:00")
+                                )
+                                trial_end_str = trial_ends.astimezone(_IST).strftime("%-d %b %Y")
+                            except Exception:
+                                trial_end_str = "in 7 days"
+                            upgrade_url = f"{settings.SERVER_URL}/signup"
+                            welcome_msg = (
+                                f"🎉 Welcome to Clinic AI Agent, Dr. {doctor_name}!\n\n"
+                                f"Your *7-day free trial* is now active — full access, no credit card needed.\n\n"
+                                f"*What you can do right now:*\n"
+                                f"  📅 Book appointments for patients\n"
+                                f"  💬 Patients self-book via WhatsApp 24/7\n"
+                                f"  🔔 Automatic 24h & 1h patient reminders\n"
+                                f"  📋 Morning schedule every day at 7 AM\n"
+                                f"  🩺 Patient intake forms before appointments\n\n"
+                                f"Your trial ends on *{trial_end_str}*.\n\n"
+                                f"Type *HELP* to see all doctor commands. Let's go! 🚀"
+                            )
+                            try:
+                                await whatsapp.send_text(
+                                    doctor_phone, welcome_msg,
+                                    phone_id=client_pid, token=client_token,
+                                )
+                                db.update_clinic_setting(cid, "trial_welcome_sent", "true")
+                            except Exception as _we:
+                                logger.warning("Trial welcome failed for client %s: %s", cid, _we)
 
     # ── payment: <client_id>|amount|method|notes ──────────────────────────────
     elif lower.startswith("payment:"):
@@ -196,12 +248,8 @@ async def _dashboard_link(client_id: int) -> str:
     domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "YOUR_RAILWAY_DOMAIN")
     url = f"https://{domain}/clinic?key={key}"
     return (
-        f"U0001f517 *{name} — Clinic Dashboard*
-
-"
-        f"{url}
-
-"
+        f"\U0001f517 *{name} — Clinic Dashboard*\n\n"
+        f"{url}\n\n"
         f"_Share this link with the clinic to view their appointment stats._"
     )
 
