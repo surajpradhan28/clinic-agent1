@@ -250,8 +250,453 @@ app = FastAPI(
 # ── Health check ──────────────────────────────────────────────────────────────
 
 @app.get("/")
-async def root():
-    return {"status": "ok", "service": "Clinic AI Agent", "version": "2.0.0"}
+async def landing_page():
+    """Public marketing landing page served at the root URL."""
+    wa_phone  = (settings.ADMIN_PHONE or "919876543210")
+    wa_link   = f"https://wa.me/{wa_phone}?text=Hi%2C+I+want+to+know+more+about+Clinic+AI+Agent"
+    wa_demo   = f"https://wa.me/{wa_phone}?text=Hi%2C+I+want+a+free+demo+of+Clinic+AI+Agent"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clinic AI Agent — WhatsApp Bot for Doctor Clinics</title>
+<meta name="description" content="Automate appointment booking, reminders &amp; patient follow-ups on WhatsApp. Built for Indian doctor clinics. No app needed.">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+:root{{
+  --green:#25D366;--dark-green:#128C7E;--navy:#0d1b2a;--navy2:#0f2137;
+  --text:#1a2332;--muted:#64748b;--light:#f8fafc;--border:#e2e8f0;
+  --card:#ffffff;--accent:#1A56DB;
+}}
+html{{scroll-behavior:smooth}}
+body{{font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;color:var(--text);background:#fff;line-height:1.6;overflow-x:hidden}}
+a{{color:inherit;text-decoration:none}}
+img{{display:block;max-width:100%}}
+.container{{max-width:1100px;margin:0 auto;padding:0 24px}}
+nav{{position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px}}
+.nav-inner{{max-width:1100px;margin:0 auto;height:64px;display:flex;align-items:center;justify-content:space-between}}
+.nav-logo{{display:flex;align-items:center;gap:10px}}
+.nav-icon{{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--dark-green));display:flex;align-items:center;justify-content:center;font-size:18px}}
+.nav-name{{font-size:16px;font-weight:800;color:var(--navy);letter-spacing:-.3px}}
+.nav-links{{display:flex;align-items:center;gap:28px}}
+.nav-links a{{font-size:14px;font-weight:500;color:var(--muted);transition:color .2s}}
+.nav-links a:hover{{color:var(--navy)}}
+.btn-nav{{background:var(--green);color:#fff;font-size:13px;font-weight:700;padding:8px 20px;border-radius:8px;transition:all .2s;border:none;cursor:pointer}}
+.btn-nav:hover{{background:var(--dark-green);transform:translateY(-1px)}}
+.hero{{background:linear-gradient(160deg,#0d1b2a 0%,#0f2137 40%,#0a3d2e 100%);padding:80px 24px 60px;overflow:hidden;position:relative}}
+.hero::before{{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 70% 50%,rgba(37,211,102,0.12),transparent)}}
+.hero-inner{{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:60px;position:relative}}
+.hero-text{{flex:1;min-width:0}}
+.hero-badge{{display:inline-flex;align-items:center;gap:7px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#25D366;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;margin-bottom:20px;letter-spacing:.3px}}
+.hero-badge::before{{content:'●';font-size:8px;animation:blink 1.5s infinite}}
+@keyframes blink{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
+h1{{font-size:clamp(28px,4vw,46px);font-weight:900;color:#fff;line-height:1.15;letter-spacing:-.5px;margin-bottom:16px}}
+h1 span{{color:var(--green)}}
+.hero-sub{{font-size:16px;color:rgba(255,255,255,0.65);margin-bottom:32px;max-width:480px;line-height:1.7}}
+.hero-ctas{{display:flex;gap:12px;flex-wrap:wrap}}
+.btn-primary{{display:inline-flex;align-items:center;gap:8px;background:var(--green);color:#fff;font-size:15px;font-weight:700;padding:13px 28px;border-radius:10px;transition:all .25s;border:none;cursor:pointer}}
+.btn-primary:hover{{background:var(--dark-green);transform:translateY(-2px);box-shadow:0 8px 24px rgba(37,211,102,0.35)}}
+.btn-ghost{{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.08);color:#fff;font-size:15px;font-weight:600;padding:13px 28px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);transition:all .25s;cursor:pointer}}
+.btn-ghost:hover{{background:rgba(255,255,255,0.15)}}
+.hero-trust{{margin-top:28px;display:flex;align-items:center;gap:12px}}
+.hero-trust-text{{font-size:13px;color:rgba(255,255,255,0.5)}}
+.trust-logos{{display:flex;gap:8px}}
+.trust-chip{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-size:11px;font-weight:500;padding:4px 10px;border-radius:6px}}
+.hero-phone{{flex-shrink:0;width:260px}}
+.phone-frame{{background:#1a1a1a;border-radius:36px;padding:10px;box-shadow:0 40px 80px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.06)}}
+.phone-screen{{background:#fff;border-radius:28px;overflow:hidden}}
+.p-status{{background:#25D366;padding:4px 12px;font-size:9px;color:rgba(255,255,255,0.9);font-weight:600;display:flex;justify-content:space-between}}
+.p-header{{background:#128C7E;padding:8px 10px;display:flex;align-items:center;gap:8px}}
+.p-avatar{{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}}
+.p-hname{{font-size:12px;font-weight:700;color:#fff}}
+.p-hstatus{{font-size:9px;color:rgba(255,255,255,0.8)}}
+.p-chat{{background:#e5ddd5;padding:8px;display:flex;flex-direction:column;gap:4px;min-height:200px}}
+.p-msg{{max-width:78%;padding:5px 8px 3px;border-radius:8px;font-size:10px;line-height:1.45;position:relative}}
+.p-msg b{{font-weight:700}}
+.p-msg.r{{background:#dcf8c6;align-self:flex-end;border-radius:8px 8px 0 8px}}
+.p-msg.l{{background:#fff;align-self:flex-start;border-radius:8px 8px 8px 0}}
+.p-time{{font-size:8px;color:rgba(0,0,0,0.4);text-align:right;margin-top:2px}}
+.p-input{{background:#f0f0f0;padding:5px 8px;display:flex;gap:6px;align-items:center}}
+.p-input-box{{flex:1;background:#fff;border-radius:16px;padding:4px 10px;font-size:9px;color:#aaa}}
+.p-send{{width:24px;height:24px;border-radius:50%;background:#128C7E;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}}
+.p-date-chip{{align-self:center;background:rgba(255,255,255,0.85);font-size:8.5px;color:#666;padding:2px 7px;border-radius:5px;margin:2px 0;font-weight:500}}
+.stats-bar{{background:var(--light);border-bottom:1px solid var(--border);padding:20px 24px}}
+.stats-inner{{max-width:1100px;margin:0 auto;display:flex;justify-content:space-around;flex-wrap:wrap;gap:16px}}
+.stat-item{{text-align:center}}
+.stat-num{{font-size:26px;font-weight:900;color:var(--navy);letter-spacing:-1px}}
+.stat-num span{{color:var(--green)}}
+.stat-lbl{{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}}
+section{{padding:72px 24px}}
+.section-label{{font-size:12px;font-weight:700;color:var(--green);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}}
+h2{{font-size:clamp(22px,3vw,36px);font-weight:900;color:var(--navy);letter-spacing:-.5px;line-height:1.2;margin-bottom:12px}}
+.section-sub{{font-size:16px;color:var(--muted);max-width:540px;line-height:1.7}}
+.text-center{{text-align:center}}
+.text-center .section-sub{{margin:0 auto}}
+.features-bg{{background:#fff}}
+.features-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:48px}}
+.feat-card{{border:1px solid var(--border);border-radius:14px;padding:24px;transition:all .25s;background:#fff}}
+.feat-card:hover{{border-color:rgba(37,211,102,0.4);box-shadow:0 8px 32px rgba(37,211,102,0.08);transform:translateY(-3px)}}
+.feat-icon{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,rgba(37,211,102,0.1),rgba(18,140,126,0.1));border:1px solid rgba(37,211,102,0.2);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px}}
+.feat-title{{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:8px}}
+.feat-desc{{font-size:14px;color:var(--muted);line-height:1.65}}
+.feat-tags{{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}}
+.ftag{{font-size:11px;font-weight:600;color:var(--dark-green);background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.15);padding:3px 8px;border-radius:10px}}
+.how-bg{{background:var(--light)}}
+.steps{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px;margin-top:48px}}
+.step{{background:#fff;border-radius:14px;padding:28px 24px;border:1px solid var(--border);position:relative}}
+.step-num{{width:36px;height:36px;border-radius:50%;background:var(--green);color:#fff;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;margin-bottom:16px}}
+.step-title{{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:8px}}
+.step-desc{{font-size:14px;color:var(--muted);line-height:1.65}}
+.step-arrow{{position:absolute;right:-16px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--border);z-index:1}}
+.pricing-bg{{background:#fff}}
+.pricing-toggle{{display:flex;align-items:center;justify-content:center;gap:12px;margin:24px 0 48px}}
+.toggle-label{{font-size:14px;font-weight:600;color:var(--muted)}}
+.toggle-label.active{{color:var(--navy)}}
+.toggle-track{{width:48px;height:26px;background:var(--green);border-radius:13px;position:relative;cursor:pointer;transition:background .3s}}
+.toggle-thumb{{width:20px;height:20px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:transform .3s;box-shadow:0 2px 4px rgba(0,0,0,0.2)}}
+.toggle-track.annual .toggle-thumb{{transform:translateX(22px)}}
+.save-badge{{background:rgba(37,211,102,0.1);color:var(--green);font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;border:1px solid rgba(37,211,102,0.2)}}
+.pricing-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;max-width:960px;margin:0 auto}}
+.plan-card{{border:2px solid var(--border);border-radius:16px;padding:28px 24px;position:relative;background:#fff;transition:all .25s}}
+.plan-card:hover{{transform:translateY(-4px);box-shadow:0 16px 48px rgba(0,0,0,0.08)}}
+.plan-card.popular{{border-color:var(--green);box-shadow:0 8px 32px rgba(37,211,102,0.15)}}
+.popular-badge{{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;font-size:11px;font-weight:800;padding:4px 14px;border-radius:20px;white-space:nowrap;letter-spacing:.3px}}
+.plan-name{{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px}}
+.plan-price{{display:flex;align-items:baseline;gap:4px;margin-bottom:4px}}
+.plan-rupee{{font-size:22px;font-weight:700;color:var(--navy)}}
+.plan-amount{{font-size:40px;font-weight:900;color:var(--navy);letter-spacing:-2px;line-height:1}}
+.plan-period{{font-size:14px;color:var(--muted);font-weight:500}}
+.plan-annual{{font-size:12px;color:var(--green);font-weight:600;margin-bottom:6px;min-height:18px}}
+.plan-desc{{font-size:13px;color:var(--muted);margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)}}
+.plan-features{{display:flex;flex-direction:column;gap:9px;margin-bottom:24px}}
+.pf{{display:flex;align-items:flex-start;gap:9px;font-size:13px;color:var(--text)}}
+.pf-check{{color:var(--green);font-size:14px;font-weight:900;flex-shrink:0;margin-top:1px}}
+.pf-x{{color:#cbd5e1;font-size:14px;flex-shrink:0;margin-top:1px}}
+.btn-plan{{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;transition:all .25s}}
+.btn-plan.primary{{background:var(--green);color:#fff}}
+.btn-plan.primary:hover{{background:var(--dark-green);transform:translateY(-1px)}}
+.btn-plan.outline{{background:#fff;color:var(--navy);border:2px solid var(--border)}}
+.btn-plan.outline:hover{{border-color:var(--green);color:var(--green)}}
+.setup-fee-note{{text-align:center;font-size:12px;color:var(--muted);margin-top:20px}}
+.setup-fee-note strong{{color:var(--navy)}}
+.testi-bg{{background:linear-gradient(135deg,var(--navy),var(--navy2))}}
+.testi-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:48px}}
+.testi-card{{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:24px}}
+.testi-stars{{color:#fbbf24;font-size:16px;margin-bottom:12px;letter-spacing:2px}}
+.testi-text{{font-size:14px;color:rgba(255,255,255,0.8);line-height:1.7;margin-bottom:16px;font-style:italic}}
+.testi-author{{display:flex;align-items:center;gap:10px}}
+.testi-avatar{{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--dark-green));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0}}
+.testi-name{{font-size:14px;font-weight:700;color:#fff}}
+.testi-role{{font-size:12px;color:rgba(255,255,255,0.5)}}
+.faq-bg{{background:var(--light)}}
+.faq-list{{max-width:720px;margin:48px auto 0;display:flex;flex-direction:column;gap:12px}}
+.faq-item{{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}}
+.faq-q{{padding:18px 20px;font-size:15px;font-weight:700;color:var(--navy);cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background .2s}}
+.faq-q:hover{{background:var(--light)}}
+.faq-chevron{{font-size:12px;color:var(--muted);transition:transform .3s}}
+.faq-a{{padding:0 20px;font-size:14px;color:var(--muted);line-height:1.7;max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s}}
+.faq-item.open .faq-a{{max-height:200px;padding:0 20px 18px}}
+.faq-item.open .faq-chevron{{transform:rotate(180deg)}}
+.cta-section{{background:linear-gradient(135deg,#0d1b2a,#0a3d2e);padding:72px 24px;text-align:center}}
+.cta-section h2{{color:#fff}}
+.cta-section .section-sub{{color:rgba(255,255,255,0.6);margin:12px auto 32px}}
+.cta-chips{{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:32px}}
+.cta-chip{{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;padding:7px 14px;border-radius:20px;display:flex;align-items:center;gap:6px}}
+footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,255,255,0.07)}}
+.footer-inner{{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:20px}}
+.footer-logo{{display:flex;align-items:center;gap:10px}}
+.footer-name{{font-size:15px;font-weight:800;color:#fff}}
+.footer-tagline{{font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px}}
+.footer-links{{display:flex;gap:24px}}
+.footer-links a{{font-size:13px;color:rgba(255,255,255,0.45);transition:color .2s}}
+.footer-links a:hover{{color:#25D366}}
+.footer-copy{{font-size:12px;color:rgba(255,255,255,0.3)}}
+@media(max-width:768px){{
+  .hero-inner{{flex-direction:column;gap:36px}}
+  .hero-phone{{display:none}}
+  .nav-links{{display:none}}
+  .step-arrow{{display:none}}
+  .footer-inner{{flex-direction:column;text-align:center}}
+  .footer-links{{justify-content:center}}
+}}
+.reveal{{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}}
+.reveal.visible{{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="nav-logo">
+      <div class="nav-icon">🏥</div>
+      <div><div class="nav-name">Clinic AI Agent</div></div>
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How It Works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a href="{wa_link}" target="_blank"><button class="btn-nav">💬 WhatsApp Us</button></a>
+  </div>
+</nav>
+
+<section class="hero" style="padding:72px 24px 56px">
+  <div class="hero-inner">
+    <div class="hero-text">
+      <div class="hero-badge">🇮🇳 Built for Indian Clinics</div>
+      <h1>Your Clinic on <span>WhatsApp</span> — 24/7 Automated</h1>
+      <p class="hero-sub">Patients book appointments, get reminders, cancel and reschedule — all on WhatsApp. Zero calls. Zero manual work. Your clinic runs itself.</p>
+      <div class="hero-ctas">
+        <a href="/signup"><button class="btn-primary">🚀 Start Free Trial</button></a>
+        <a href="#pricing"><button class="btn-ghost">View Pricing ↓</button></a>
+      </div>
+      <div class="hero-trust">
+        <div class="hero-trust-text">Works with:</div>
+        <div class="trust-logos">
+          <div class="trust-chip">GP Clinics</div>
+          <div class="trust-chip">Gynaecology</div>
+          <div class="trust-chip">Paediatrics</div>
+          <div class="trust-chip">Dentistry</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-phone">
+      <div class="phone-frame"><div class="phone-screen">
+        <div class="p-status"><span>9:41</span><span>🔋</span></div>
+        <div class="p-header">
+          <div class="p-avatar">DS</div>
+          <div><div class="p-hname">Dr. Sharma's Clinic</div><div class="p-hstatus">online</div></div>
+        </div>
+        <div class="p-chat">
+          <div class="p-date-chip">Today</div>
+          <div class="p-msg r">Hi, I want to book an appointment<div class="p-time">10:02 ✓✓</div></div>
+          <div class="p-msg l">Welcome! 👋 May I know your name?<div class="p-time">10:02</div></div>
+          <div class="p-msg r">Rahul Gupta<div class="p-time">10:03 ✓✓</div></div>
+          <div class="p-msg l">Hi Rahul! Available tomorrow:<br><b>🕙 10:00 AM · 10:30 AM</b><br>🕙 11:00 AM · 5:00 PM<br><br>Which slot works?<div class="p-time">10:03</div></div>
+          <div class="p-msg r">10:30 AM<div class="p-time">10:03 ✓✓</div></div>
+          <div class="p-msg l">✅ <b>Confirmed!</b><br>📅 Tomorrow · 10:30 AM<br>🏥 Dr. Sharma<br>📍 123 MG Road, Mumbai<div class="p-time">10:04</div></div>
+        </div>
+        <div class="p-input"><div class="p-input-box">Type a message</div><div class="p-send">▶</div></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat-item"><div class="stat-num"><span>24/7</span></div><div class="stat-lbl">Booking Availability</div></div>
+    <div class="stat-item"><div class="stat-num"><span>0</span> Calls</div><div class="stat-lbl">Phone Calls Needed</div></div>
+    <div class="stat-item"><div class="stat-num"><span>60</span>s</div><div class="stat-lbl">To Book an Appointment</div></div>
+    <div class="stat-item"><div class="stat-num"><span>−35%</span></div><div class="stat-lbl">Patient No-shows</div></div>
+    <div class="stat-item"><div class="stat-num"><span>0</span></div><div class="stat-lbl">App Download Needed</div></div>
+  </div>
+</div>
+
+<section class="features-bg" id="features">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-label">Features</div>
+      <h2>Everything Your Clinic Needs</h2>
+      <p class="section-sub">All features work over WhatsApp — no app, no website, no training required for patients.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card reveal"><div class="feat-icon">📅</div><div class="feat-title">Smart Appointment Booking</div><div class="feat-desc">Patients message your clinic WhatsApp and get available slots instantly. Bot confirms the appointment automatically — no human needed.</div><div class="feat-tags"><span class="ftag">24/7 Active</span><span class="ftag">Instant Confirm</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">⏰</div><div class="feat-title">Automatic Reminders</div><div class="feat-desc">Bot sends a WhatsApp reminder 24 hours before every appointment. Patient confirms or cancels with one word. Drastically reduces no-shows.</div><div class="feat-tags"><span class="ftag">Auto-Sent</span><span class="ftag">Zero Effort</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">❌</div><div class="feat-title">Easy Cancellation</div><div class="feat-desc">Patients cancel in 3 messages without calling. Cancelled slot becomes available again instantly for another patient.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Instant</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🔄</div><div class="feat-title">One-Tap Reschedule</div><div class="feat-desc">Patient wants to change their appointment? They send one message, choose a new slot, done. No phone tag, no manual diary editing.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Any Date</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🩺</div><div class="feat-title">Doctor WhatsApp Controls</div><div class="feat-desc">Doctor can block time slots, view today's list, and update clinic notes — all from their own WhatsApp. No separate app to learn.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">Command-Based</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🌅</div><div class="feat-title">Daily Morning Schedule</div><div class="feat-desc">Every morning at 7 AM, the doctor gets a complete WhatsApp summary of the day's appointments — name, time, and new patient flags.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">7 AM Auto</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">💬</div><div class="feat-title">Post-Visit Follow-up</div><div class="feat-desc">7 days after a visit, the bot automatically checks in with the patient and requests a Google review. Build your clinic's reputation passively.</div><div class="feat-tags"><span class="ftag">Auto</span><span class="ftag">Review Boost</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🔒</div><div class="feat-title">No App Required</div><div class="feat-desc">Patients already have WhatsApp. No download, no login, no new platform. The clinic bot works in the same app patients use every day.</div><div class="feat-tags"><span class="ftag">Zero Friction</span><span class="ftag">All Phones</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📊</div><div class="feat-title">Admin Web Dashboard</div><div class="feat-desc">See all appointments, patient history, and usage stats in a clean web dashboard. Manage everything from any browser — no install needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Web-Based</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="how-bg" id="how">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-label">How It Works</div>
+      <h2>Setup in 24 Hours. Run Forever.</h2>
+      <p class="section-sub">We handle the entire setup. You just share your WhatsApp number with patients and the bot does the rest.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="step-num">1</div><div class="step-title">You Sign Up Online</div><div class="step-desc">Fill in your clinic name, doctor name, address, timing, and plan. Takes 2 minutes. No credit card required for the free trial.</div><div class="step-arrow">→</div></div>
+      <div class="step reveal"><div class="step-num">2</div><div class="step-title">We Activate Your Bot</div><div class="step-desc">We set up your WhatsApp bot on Meta's official API — the same platform used by banks and airlines. Fully secure and verified.</div><div class="step-arrow">→</div></div>
+      <div class="step reveal"><div class="step-num">3</div><div class="step-title">Patients Start Booking</div><div class="step-desc">Share your clinic WhatsApp number. Patients message it and instantly get appointment slots. Your receptionist can focus on in-clinic work.</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="pricing-bg" id="pricing">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-label">Pricing</div>
+      <h2>Simple, Affordable Pricing</h2>
+      <p class="section-sub">No hidden fees. Cancel any time. All plans include free setup support and a 7-day free trial.</p>
+    </div>
+    <div class="pricing-toggle">
+      <span class="toggle-label active" id="lblMonthly">Monthly</span>
+      <div class="toggle-track" id="toggleTrack" onclick="toggleBilling()"><div class="toggle-thumb"></div></div>
+      <span class="toggle-label" id="lblAnnual">Annual</span>
+      <span class="save-badge">Save 2 months free!</span>
+    </div>
+    <div class="pricing-grid">
+      <div class="plan-card reveal">
+        <div class="plan-name">Starter</div>
+        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
+        <div class="plan-annual" id="annual1"></div>
+        <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
+        <div class="plan-features">
+          <div class="pf"><span class="pf-check">✓</span><span>WhatsApp appointment booking</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Automatic 24h reminders</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Post-visit follow-up messages</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Web admin dashboard</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
+          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Cancellation &amp; reschedule</span></div>
+          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
+        </div>
+        <a href="/signup?plan=starter"><button class="btn-plan outline">Start Free Trial</button></a>
+      </div>
+      <div class="plan-card popular reveal">
+        <div class="popular-badge">⭐ Most Popular</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-annual" id="annual2"></div>
+        <div class="plan-desc">Best for established clinics that want full patient self-service.</div>
+        <div class="plan-features">
+          <div class="pf"><span class="pf-check">✓</span><span>Everything in Starter</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Patient cancellation via WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Patient rescheduling via WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Priority WhatsApp support</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
+          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
+          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Daily morning schedule</span></div>
+        </div>
+        <a href="/signup?plan=pro"><button class="btn-plan primary">Start Free Trial</button></a>
+      </div>
+      <div class="plan-card reveal">
+        <div class="plan-name">Suite</div>
+        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-annual" id="annual3"></div>
+        <div class="plan-desc">For doctors who want full automation and schedule visibility.</div>
+        <div class="plan-features">
+          <div class="pf"><span class="pf-check">✓</span><span>Everything in Pro</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Doctor WhatsApp commands</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Block / unblock time slots</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Daily 7 AM schedule on WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Clinic notes &amp; announcements</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Dedicated support channel</span></div>
+        </div>
+        <a href="/signup?plan=suite"><button class="btn-plan outline">Start Free Trial</button></a>
+      </div>
+    </div>
+    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: ₹1,500</strong> — We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
+    <div class="setup-fee-note reveal" style="margin-top:8px">✅ 7-day free trial &nbsp;·&nbsp; ✅ No credit card required &nbsp;·&nbsp; ✅ Cancel any time &nbsp;·&nbsp; ✅ All Indian +91 numbers supported</div>
+  </div>
+</section>
+
+<section class="testi-bg">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-label" style="color:rgba(37,211,102,0.8)">Testimonials</div>
+      <h2 style="color:#fff">Doctors Love It</h2>
+      <p class="section-sub" style="color:rgba(255,255,255,0.55)">Clinics using Clinic AI Agent save 2–3 hours every day on phone calls and appointment management.</p>
+    </div>
+    <div class="testi-grid">
+      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"Earlier my receptionist used to spend 2 hours daily just picking up calls for bookings. Now the bot handles everything. Patients actually prefer it — they book at midnight when they remember!"</div><div class="testi-author"><div class="testi-avatar">RS</div><div><div class="testi-name">Dr. Rajesh Sharma</div><div class="testi-role">General Physician, Mumbai</div></div></div></div>
+      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"The 24-hour reminder feature alone is worth the price. My no-show rate dropped from 4–5 patients a day to maybe 1 per week. That is real money saved every month."</div><div class="testi-author"><div class="testi-avatar">PM</div><div><div class="testi-name">Dr. Priya Mehta</div><div class="testi-role">Gynaecologist, Pune</div></div></div></div>
+      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"I get my full day's schedule on WhatsApp every morning at 7 AM. I know exactly how many patients are coming before I even reach the clinic. Simple but very useful."</div><div class="testi-author"><div class="testi-avatar">AK</div><div><div class="testi-name">Dr. Arvind Kumar</div><div class="testi-role">Paediatrician, Bangalore</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="faq-bg" id="faq">
+  <div class="container">
+    <div class="text-center reveal"><div class="section-label">FAQ</div><h2>Common Questions</h2></div>
+    <div class="faq-list">
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Do patients need to download any app? <span class="faq-chevron">▼</span></div><div class="faq-a">No. Patients just message your existing clinic WhatsApp number. They use the same WhatsApp app they already have. Zero download, zero registration, zero friction.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">How long does setup take? <span class="faq-chevron">▼</span></div><div class="faq-a">We set everything up within 24 hours of receiving your details. You just need to share your clinic name, doctor name, WhatsApp number, address, and timing. We handle the rest.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Will it work with my Indian +91 WhatsApp number? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes, completely. We use Meta's official WhatsApp Cloud API which fully supports Indian +91 numbers. This is the same API used by Zomato, Swiggy, banks, and airlines in India.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">What if a patient asks a question the bot cannot answer? <span class="faq-chevron">▼</span></div><div class="faq-a">The bot handles all booking-related queries automatically. For anything outside its scope, it politely tells the patient to call the clinic directly. You can also take over the conversation manually at any time.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I change my clinic timings or off days? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes. Just WhatsApp us or use the admin dashboard. Changes take effect immediately. You can update timings, block specific dates, or close morning/evening slots independently.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Is my patient data safe? <span class="faq-chevron">▼</span></div><div class="faq-a">All data is stored securely in an encrypted database. We do not share patient information with any third party. Each clinic's data is completely isolated from other clinics on the platform.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I cancel my plan? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes, cancel any time with no penalty. For monthly plans, cancellation takes effect at the end of the current billing month. We also offer a 7-day free trial so you can test everything before paying.</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section">
+  <div class="container">
+    <div class="section-label" style="color:rgba(37,211,102,0.7)">Get Started</div>
+    <h2>Ready to Automate Your Clinic?</h2>
+    <p class="section-sub">7-day free trial. Setup in 24 hours. No credit card needed.</p>
+    <div class="cta-chips">
+      <div class="cta-chip">✅ No app download</div>
+      <div class="cta-chip">✅ Works on all phones</div>
+      <div class="cta-chip">✅ Indian +91 numbers</div>
+      <div class="cta-chip">✅ 24/7 active</div>
+      <div class="cta-chip">✅ Cancel any time</div>
+    </div>
+    <a href="/signup"><button class="btn-primary" style="font-size:16px;padding:15px 36px">🚀 Start Your Free Trial</button></a>
+    <p style="margin-top:16px;font-size:13px;color:rgba(255,255,255,0.4)">Questions? WhatsApp us: <a href="{wa_demo}" target="_blank" style="color:#25D366;font-weight:700">+91 {wa_phone[2:]}</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo">
+      <div class="nav-icon" style="width:32px;height:32px;font-size:16px">🏥</div>
+      <div><div class="footer-name">Clinic AI Agent</div><div class="footer-tagline">WhatsApp Automation for Doctor Clinics</div></div>
+    </div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="/signup">Sign Up</a>
+      <a href="{wa_link}" target="_blank">WhatsApp</a>
+    </div>
+    <div class="footer-copy">© 2025 Clinic AI Agent. All rights reserved.</div>
+  </div>
+</footer>
+
+<script>
+let isAnnual=false;
+const monthly=[999,1999,2999];
+const annual=[9990,19990,29990];
+const fmt=n=>n.toLocaleString('en-IN');
+function toggleBilling(){{
+  isAnnual=!isAnnual;
+  document.getElementById('toggleTrack').classList.toggle('annual',isAnnual);
+  document.getElementById('lblMonthly').classList.toggle('active',!isAnnual);
+  document.getElementById('lblAnnual').classList.toggle('active',isAnnual);
+  [1,2,3].forEach(i=>{{
+    document.getElementById('price'+i).textContent=isAnnual?fmt(annual[i-1]):fmt(monthly[i-1]);
+    document.getElementById('annual'+i).textContent=isAnnual?'Billed ₹'+fmt(annual[i-1])+'/year (2 months FREE)':'';
+  }});
+}}
+function toggleFaq(el){{
+  const item=el.parentElement;
+  const isOpen=item.classList.contains('open');
+  document.querySelectorAll('.faq-item').forEach(f=>f.classList.remove('open'));
+  if(!isOpen)item.classList.add('open');
+}}
+const observer=new IntersectionObserver(entries=>{{
+  entries.forEach(e=>{{if(e.isIntersecting){{e.target.classList.add('visible');observer.unobserve(e.target);}}}});
+}},{{threshold:0.12}});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+document.querySelectorAll('a[href^="#"]').forEach(a=>{{
+  a.addEventListener('click',e=>{{
+    const target=document.querySelector(a.getAttribute('href'));
+    if(target){{e.preventDefault();target.scrollIntoView({{behavior:'smooth',block:'start'}});}}
+  }});
+}});
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.get("/admin")
@@ -385,6 +830,9 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
   <style>
     *{{box-sizing:border-box;margin:0;padding:0;}}
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#1a1a2e;}}
+    .top-nav{{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 24px;height:52px;display:flex;align-items:center;}}
+    .top-nav a{{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:#64748b;text-decoration:none;transition:color .2s;}}
+    .top-nav a:hover{{color:#1A3A5C;}}
     .hero{{background:linear-gradient(135deg,#1A3A5C 0%,#2E75B6 100%);color:#fff;
            text-align:center;padding:48px 20px 40px;}}
     .hero h1{{font-size:clamp(24px,5vw,38px);font-weight:800;margin-bottom:10px;}}
@@ -394,6 +842,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
                   padding:5px 16px;font-size:13px;font-weight:700;margin-bottom:18px;
                   letter-spacing:.5px;}}
     .container{{max-width:900px;margin:0 auto;padding:32px 16px 60px;}}
+    .nav-logo-icon{{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#25D366,#128C7E);display:inline-flex;align-items:center;justify-content:center;font-size:14px;}}
 
     /* Plan cards */
     .plans{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:36px;}}
@@ -448,6 +897,9 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
   </style>
 </head>
 <body>
+  <div class="top-nav">
+    <a href="/"><span class="nav-logo-icon">🏥</span> ← Back to Home</a>
+  </div>
   <div class="hero">
     <div class="trial-badge">🎁 7-Day Free Trial — No Credit Card Needed</div>
     <h1>Your Clinic's 24/7 WhatsApp Receptionist</h1>
