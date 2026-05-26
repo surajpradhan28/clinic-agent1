@@ -78,8 +78,8 @@ class Settings:
 
     # ── Server / public URL ───────────────────────────────────────────────────
     # Used to build invoice links sent via WhatsApp.
-    # Set to your Railway domain: e.g. "https://clinic-agent-production.up.railway.app"
-    SERVER_URL: str = os.getenv("SERVER_URL", "https://clinic-agent-production.up.railway.app")
+    # Set to your Railway domain: e.g. "https://clinic-agent1-production-9d21.up.railway.app"
+    SERVER_URL: str = os.getenv("SERVER_URL", "https://clinic-agent1-production-9d21.up.railway.app")
 
     # ── Subscription plan pricing (INR per month) ─────────────────────────────
     PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))

@@ -1650,6 +1650,7 @@ async def razorpay_webhook(request: Request):
 
 
 @app.get("/health")
+@app.head("/health")
 async def health():
     checks = {
         "whatsapp_token": bool(settings.WHATSAPP_TOKEN),
@@ -1659,7 +1660,7 @@ async def health():
         "scheduler_running": sched.scheduler.running,
     }
     all_ok = all(checks.values())
-    # Always return 200 so Railway healthcheck passes; status field indicates health
+    # Always return 200 so Railway/UptimeRobot healthcheck passes; status field indicates health
     return JSONResponse(
         status_code=200,
         content={"status": "healthy" if all_ok else "degraded", "checks": checks},
