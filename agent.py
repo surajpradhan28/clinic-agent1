@@ -606,7 +606,11 @@ async def _execute_function(
         date = fn_args.get("date", "")
         try:
             day_name = datetime.strptime(date, "%Y-%m-%d").strftime("%A")
-            if day_name in settings.WEEKLY_OFF_DAYS:
+            # Merge global weekly-off with per-clinic setting stored in clinic_settings
+            per_clinic_off_raw = db.get_clinic_setting(client_id, "weekly_off_days") or ""
+            per_clinic_off = [d.strip() for d in per_clinic_off_raw.split(",") if d.strip()]
+            all_off_days = list(set(settings.WEEKLY_OFF_DAYS + per_clinic_off))
+            if day_name in all_off_days:
                 return json.dumps({
                     "date": date, "morning_slots": [], "evening_slots": [],
                     "total_available": 0, "note": f"Clinic is closed on {day_name}s.",
@@ -1201,7 +1205,10 @@ def _build_doctor_prompt(client: dict) -> str:
     today     = datetime.now(_IST).strftime("%A, %d %B %Y")   # IST date for India
     client_id = client["id"]
     info      = _get_clinic_info(client_id)
-    off_days  = ", ".join(settings.WEEKLY_OFF_DAYS) if settings.WEEKLY_OFF_DAYS else "None"
+    per_clinic_off_raw = db.get_clinic_setting(client_id, "weekly_off_days") or ""
+    per_clinic_off = [d.strip() for d in per_clinic_off_raw.split(",") if d.strip()]
+    all_off_days = list(set(settings.WEEKLY_OFF_DAYS + per_clinic_off))
+    off_days  = ", ".join(all_off_days) if all_off_days else "None"
     return f"""You are a schedule assistant for {info['doctor_name']} at {info['clinic_name']}.
 Today is {today}.
 

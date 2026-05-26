@@ -581,7 +581,7 @@ async def signup_submit(request: Request):
     notifies admin via WhatsApp, and shows the success page.
     """
     import secrets as _secrets
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt, timedelta as _td, timezone
 
     form   = await request.form()
     clinic_name   = (form.get("clinic_name")   or "").strip()
