@@ -537,7 +537,49 @@ def _upgrade_plan_card() -> str:
     )
 
 
-_UPGRADE_KEYWORDS = frozenset({"upgrade", "pricing", "plans", "plan", "cost", "price", "features"})
+_UPGRADE_KEYWORDS  = frozenset({"upgrade", "pricing", "plans", "plan", "cost", "price", "features"})
+_REFERRAL_KEYWORDS = frozenset({"referral", "refer", "referrals", "my code", "my referral", "share code", "invite"})
+
+
+def _referral_card(client_id: int) -> str:
+    """Referral stats card — sent when doctor types 'referral' / 'my code'."""
+    from config import settings as _s
+    try:
+        stats = db.get_referral_stats(client_id)
+    except Exception:
+        stats = {"referral_code": "", "total_signups": 0, "total_paid": 0,
+                 "pending_months": 0, "applied_months": 0}
+
+    code         = stats.get("referral_code") or "—"
+    signups      = stats.get("total_signups", 0)
+    paid         = stats.get("total_paid", 0)
+    pending_mo   = stats.get("pending_months", 0)
+    applied_mo   = stats.get("applied_months", 0)
+    signup_url   = f"{_s.SERVER_URL}/signup?ref={code}"
+
+    pending_line = (
+        f"\n\n💰 *Reward pending:* {pending_mo} free month(s) on your next renewal!"
+        if pending_mo else ""
+    )
+    applied_line = (
+        f"\n✅ *Already credited:* {applied_mo} free month(s)"
+        if applied_mo else ""
+    )
+
+    return (
+        f"🤝 *Your Referral Code: `{code}`*\n\n"
+        f"Share this link with doctor friends:\n"
+        f"👉 {signup_url}\n\n"
+        f"📊 *Your referral stats:*\n"
+        f"  • {signups} clinic(s) signed up with your code\n"
+        f"  • {paid} paid → {paid} free month(s) earned"
+        f"{applied_line}"
+        f"{pending_line}\n\n"
+        f"*How it works:*\n"
+        f"For every doctor friend who subscribes using your link, "
+        f"you get *1 free month* added to your account automatically. "
+        f"No limit — the more you refer, the more you save! 🎉"
+    )
 
 
 def _get_doctor_tools(plan: str) -> list[dict]:
@@ -1210,6 +1252,13 @@ async def _get_doctor_reply(phone: str, user_text: str, client: dict) -> tuple[s
     _lower = user_text.strip().lower().rstrip("?!")
     if _lower in _UPGRADE_KEYWORDS or any(kw in _lower.split() for kw in _UPGRADE_KEYWORDS):
         reply = _upgrade_plan_card()
+        db.save_message(client_id, phone, "user", user_text)
+        db.save_message(client_id, phone, "assistant", reply)
+        return reply, None
+
+    # ── Fast-path: referral / my code keyword ───────────────────────────────
+    if _lower in _REFERRAL_KEYWORDS or any(kw in _lower for kw in _REFERRAL_KEYWORDS):
+        reply = _referral_card(client_id)
         db.save_message(client_id, phone, "user", user_text)
         db.save_message(client_id, phone, "assistant", reply)
         return reply, None

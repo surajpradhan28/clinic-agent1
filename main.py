@@ -606,11 +606,25 @@ async def signup_submit(request: Request):
         except Exception:
             pass  # Don't fail signup if admin notify fails
 
-    return HTMLResponse(content=_signup_success_html(clinic_name, doctor_name, plan), status_code=200)
+    return HTMLResponse(content=_signup_success_html(clinic_name, doctor_name, plan, ref_code), status_code=200)
 
 
-def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
-    plan_label = plan.title()
+def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral_code: str = "") -> str:
+    plan_label   = plan.title()
+    signup_url   = f"{settings.SERVER_URL}/signup"
+    ref_link     = f"{signup_url}?ref={referral_code}" if referral_code else signup_url
+    referral_box = f"""
+    <div class="referral-box">
+      <div class="ref-title">🤝 Refer a Doctor, Get 1 Free Month</div>
+      <p style="font-size:13px;color:#444;margin-bottom:10px;">
+        Share your unique referral link. Every doctor friend who subscribes earns you <strong>1 free month</strong> — no limit!
+      </p>
+      <div class="ref-code">{referral_code}</div>
+      <div class="ref-url" id="refUrl">{ref_link}</div>
+      <button class="copy-btn" onclick="copyLink()">📋 Copy Referral Link</button>
+      <div id="copied" style="display:none;color:#2E7D32;font-size:13px;margin-top:6px;">✅ Copied!</div>
+    </div>""" if referral_code else ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -620,7 +634,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
   <style>
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;
          display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}}
-    .card{{background:#fff;border-radius:16px;padding:48px 40px;max-width:520px;width:100%;
+    .card{{background:#fff;border-radius:16px;padding:48px 40px;max-width:540px;width:100%;
            text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.1);}}
     .icon{{font-size:56px;margin-bottom:16px;}}
     h1{{font-size:26px;font-weight:800;color:#1A3A5C;margin-bottom:8px;}}
@@ -633,6 +647,17 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
                 font-weight:700;flex-shrink:0;margin-top:1px;}}
     .badge{{display:inline-block;background:#E8F5E9;color:#2E7D32;border-radius:20px;
             padding:4px 14px;font-size:13px;font-weight:700;margin:8px 0 0;}}
+    .referral-box{{background:linear-gradient(135deg,#1A3A5C08,#2E75B612);
+                   border:1.5px solid #2E75B630;border-radius:14px;
+                   padding:20px 24px;margin:24px 0;text-align:center;}}
+    .ref-title{{font-size:16px;font-weight:800;color:#1A3A5C;margin-bottom:8px;}}
+    .ref-code{{font-size:28px;font-weight:900;color:#2E75B6;letter-spacing:4px;
+               background:#fff;border-radius:8px;padding:8px 20px;
+               display:inline-block;margin-bottom:8px;border:2px dashed #2E75B680;}}
+    .ref-url{{font-size:12px;color:#888;word-break:break-all;margin-bottom:10px;}}
+    .copy-btn{{background:#2E75B6;color:#fff;border:none;border-radius:8px;
+               padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;}}
+    .copy-btn:hover{{opacity:.88;}}
   </style>
 </head>
 <body>
@@ -650,7 +675,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
         <div>Our team sets up your dedicated WhatsApp Business number — usually within a few hours.</div>
       </div>
       <div class="step"><div class="num">2</div>
-        <div>You'll receive a WhatsApp message on <strong>{clinic_name[:20]}</strong>'s number with your login and a quick setup guide.</div>
+        <div>You'll receive a WhatsApp welcome message with setup instructions.</div>
       </div>
       <div class="step"><div class="num">3</div>
         <div>Send your first test booking and see the AI in action. Setup takes under 10 minutes.</div>
@@ -659,8 +684,20 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str) -> str:
         <div>Your 7-day trial begins from activation day — full access, no credit card needed.</div>
       </div>
     </div>
+
+    {referral_box}
+
     <p style="font-size:13px;color:#888;">Questions? WhatsApp us at <strong>{settings.ADMIN_PHONE or 'our support number'}</strong>.</p>
   </div>
+  <script>
+    function copyLink() {{
+      const url = document.getElementById('refUrl').innerText;
+      navigator.clipboard.writeText(url).then(() => {{
+        document.getElementById('copied').style.display = 'block';
+        setTimeout(() => document.getElementById('copied').style.display = 'none', 2500);
+      }});
+    }}
+  </script>
 </body>
 </html>"""
 

@@ -1317,3 +1317,138 @@ def count_appointments_since(client_id: int, since_date: str) -> int:
         return result.count or 0
     except Exception:
         return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REFERRAL REWARDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_referral_stats(client_id: int) -> dict:
+    """Return referral stats for a clinic:
+      - referral_code: their shareable code
+      - total_signups: how many clinics used their code
+      - total_paid: how many of those went on to pay (reward triggered)
+      - pending_months: free months earned but not yet applied
+      - applied_months: free months already credited
+    """
+    db = get_db()
+    # Get the client's own referral code
+    client_row = db.table("clients").select("referral_code").eq("id", client_id).limit(1).execute()
+    ref_code = (client_row.data[0].get("referral_code") or "") if client_row.data else ""
+
+    # Count signups that used this code
+    signups_res = (
+        db.table("clients")
+        .select("id", count="exact")
+        .eq("referred_by", ref_code)
+        .execute()
+    ) if ref_code else None
+    total_signups = (signups_res.count or 0) if signups_res else 0
+
+    # Count rewards
+    rewards_res = (
+        db.table("referral_rewards")
+        .select("status, reward_months")
+        .eq("referrer_id", client_id)
+        .execute()
+    )
+    rows = rewards_res.data or []
+    total_paid    = len(rows)
+    pending_months = sum(r["reward_months"] for r in rows if r["status"] == "pending")
+    applied_months = sum(r["reward_months"] for r in rows if r["status"] == "applied")
+
+    return {
+        "referral_code":  ref_code,
+        "total_signups":  total_signups,
+        "total_paid":     total_paid,
+        "pending_months": pending_months,
+        "applied_months": applied_months,
+    }
+
+
+def create_referral_reward(referrer_id: int, referred_id: int, months: int = 1) -> dict | None:
+    """Create a pending referral reward. Returns the new row or None if already exists."""
+    db = get_db()
+    try:
+        result = (
+            db.table("referral_rewards")
+            .insert({
+                "referrer_id":   referrer_id,
+                "referred_id":   referred_id,
+                "reward_months": months,
+                "status":        "pending",
+            })
+            .execute()
+        )
+        return result.data[0] if result.data else None
+    except Exception:
+        # UNIQUE constraint violation = reward already created for this pair
+        return None
+
+
+def get_pending_referral_rewards(referrer_id: int) -> list[dict]:
+    """Return all pending rewards for a referrer."""
+    db = get_db()
+    result = (
+        db.table("referral_rewards")
+        .select("*")
+        .eq("referrer_id", referrer_id)
+        .eq("status", "pending")
+        .execute()
+    )
+    return result.data or []
+
+
+def apply_referral_reward(reward_id: int) -> bool:
+    """Mark a reward as applied and extend the referrer's active subscription by reward_months."""
+    db = get_db()
+    # Fetch the reward
+    rr = db.table("referral_rewards").select("*").eq("id", reward_id).limit(1).execute()
+    if not rr.data:
+        return False
+    reward = rr.data[0]
+    if reward["status"] != "pending":
+        return False
+    referrer_id  = reward["referrer_id"]
+    months       = reward["reward_months"]
+
+    # Extend active subscription end_date
+    sub = (
+        db.table("subscriptions")
+        .select("id, end_date")
+        .eq("client_id", referrer_id)
+        .eq("status", "active")
+        .order("end_date", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if sub.data:
+        from datetime import date, timedelta
+        current_end = date.fromisoformat(sub.data[0]["end_date"])
+        new_end     = current_end + timedelta(days=30 * months)
+        db.table("subscriptions").update({"end_date": new_end.isoformat()}).eq("id", sub.data[0]["id"]).execute()
+
+    # Mark reward applied
+    from datetime import datetime, timezone
+    db.table("referral_rewards").update({
+        "status":     "applied",
+        "applied_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", reward_id).execute()
+
+    logger.info("Referral reward %s applied for client %s (+%d month(s))", reward_id, referrer_id, months)
+    return True
+
+
+def get_referrer_by_code(referral_code: str) -> dict | None:
+    """Look up a client by their referral_code. Returns the client row or None."""
+    if not referral_code:
+        return None
+    db = get_db()
+    result = (
+        db.table("clients")
+        .select("*")
+        .eq("referral_code", referral_code.upper())
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None

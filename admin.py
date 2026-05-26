@@ -203,6 +203,26 @@ async def handle_admin_message(
         else:
             await whatsapp.send_text(phone, await _dashboard_link(cid), phone_id=pid)
 
+    # ── referrals / apply reward ──────────────────────────────────────────────
+    elif lower == "referrals":
+        await whatsapp.send_text(phone, _referrals_summary(), phone_id=pid)
+
+    elif lower.startswith("apply reward:"):
+        rid = _parse_int(cmd, "apply reward:")
+        if rid is None:
+            await whatsapp.send_text(
+                phone,
+                "❌ Usage: `apply reward: <reward_id>`\nExample: `apply reward: 3`\n\n"
+                "Extends the referrer's subscription by 1 month and marks reward applied.",
+                phone_id=pid,
+            )
+        else:
+            success = db.apply_referral_reward(rid)
+            if success:
+                await whatsapp.send_text(phone, f"✅ Reward #{rid} applied — subscription extended by 1 month.", phone_id=pid)
+            else:
+                await whatsapp.send_text(phone, f"❌ Reward #{rid} not found or already applied.", phone_id=pid)
+
     # ── unknown ───────────────────────────────────────────────────────────────
     else:
         await whatsapp.send_text(
@@ -229,11 +249,53 @@ def _help_text() -> str:
         "*activate: <id>* — reactivate a client\n\n"
         "💌 *renewal template: <id>*\n"
         "_Get a ready-to-forward renewal offer message_\n\n"
-        "U0001f517 *dashboard: <id>* — get clinic dashboard URL\n"
-        "_Sends the direct dashboard link for that clinic_\n\n"
+        "\U0001f517 *dashboard: <id>* — get clinic dashboard URL\n\n"
+        "🤝 *referrals* — referral leaderboard + pending rewards\n"
+        "*apply reward: <reward_id>* — credit 1 free month to referrer\n\n"
         "📊 Web dashboard:\n"
         f"/admin?key=YOUR_SECRET"
     )
+
+
+def _referrals_summary() -> str:
+    """Admin: all referral rewards (pending first, then applied)."""
+    try:
+        supabase = db.get_db()
+        rewards = (
+            supabase.table("referral_rewards")
+            .select("id, referrer_id, referred_id, reward_months, status, triggered_at")
+            .order("triggered_at", desc=True)
+            .limit(50)
+            .execute()
+        ).data or []
+    except Exception as exc:
+        return f"❌ Could not fetch referrals: {exc}"
+
+    if not rewards:
+        return "🤝 *Referrals*\n\nNo referral rewards yet."
+
+    pending  = [r for r in rewards if r["status"] == "pending"]
+    applied  = [r for r in rewards if r["status"] == "applied"]
+    lines    = [f"🤝 *Referral Rewards* ({len(rewards)} total)\n"]
+
+    if pending:
+        lines.append(f"⏳ *Pending ({len(pending)}):*")
+        for r in pending:
+            lines.append(
+                f"  #{r['id']} — referrer {r['referrer_id']} ← referred {r['referred_id']} "
+                f"(+{r['reward_months']}mo)"
+            )
+        lines.append("  → Use `apply reward: <id>` to credit")
+        lines.append("")
+
+    if applied:
+        lines.append(f"✅ *Applied ({len(applied)}):*")
+        for r in applied[:10]:
+            lines.append(
+                f"  #{r['id']} — referrer {r['referrer_id']} ← referred {r['referred_id']}"
+            )
+
+    return "\n".join(lines)
 
 
 async def _dashboard_link(client_id: int) -> str:
@@ -450,13 +512,57 @@ async def _handle_payment(phone: str, cmd: str, pid: str) -> None:
     await whatsapp.send_text(
         phone,
         f"✅ Payment recorded!\n"
-        f"Client: {client['name']} [{client_id}]\n"
+        f"Client: {client.get('name') or client.get('clinic_name') or client_id} [{client_id}]\n"
         f"Amount: ₹{amount:.0f}\n"
         f"Method: {method}\n"
         f"Notes: {notes or '—'}",
         phone_id=pid,
     )
     logger.info("[Admin] Payment recorded: client=%s amount=%s method=%s", client_id, amount, method)
+
+    # ── Auto-trigger referral reward if this client was referred ─────────────
+    referred_by_code = (client.get("referred_by") or "").strip().upper()
+    if referred_by_code:
+        referrer = db.get_referrer_by_code(referred_by_code)
+        if referrer and referrer["id"] != client_id:
+            reward = db.create_referral_reward(
+                referrer_id=referrer["id"],
+                referred_id=client_id,
+                months=1,
+            )
+            if reward:
+                # Notify referrer via WhatsApp
+                referrer_phone  = referrer.get("contact_phone") or ""
+                referrer_pid    = referrer.get("whatsapp_phone_id") or ""
+                referrer_token  = referrer.get("whatsapp_token") or None
+                referred_name   = client.get("name") or client.get("clinic_name") or f"Client {client_id}"
+                referrer_name   = referrer.get("doctor_name") or "Doctor"
+                upgrade_url     = f"{settings.SERVER_URL}/signup"
+                if referrer_phone and referrer_pid:
+                    reward_msg = (
+                        f"🎉 *Referral reward unlocked, Dr. {referrer_name}!*\n\n"
+                        f"*{referred_name}* just subscribed using your referral code.\n\n"
+                        f"You've earned *1 free month* on your next renewal. "
+                        f"It will be automatically applied when we process your next payment.\n\n"
+                        f"Keep sharing your code to earn more!\n"
+                        f"👉 {upgrade_url}?ref={referrer.get('referral_code', '')}"
+                    )
+                    try:
+                        await whatsapp.send_text(
+                            referrer_phone, reward_msg,
+                            phone_id=referrer_pid, token=referrer_token,
+                        )
+                    except Exception as _re:
+                        logger.warning("[Admin] Referral reward notify failed: %s", _re)
+                # Notify admin too
+                await whatsapp.send_text(
+                    phone,
+                    f"🔗 Referral reward created!\n"
+                    f"Referrer: {referrer.get('name') or referrer.get('clinic_name')} [{referrer['id']}]\n"
+                    f"Referred: {referred_name} [{client_id}]\n"
+                    f"Reward: 1 free month (pending)",
+                    phone_id=pid,
+                )
 
 
 async def _handle_new_client(phone: str, cmd: str, pid: str) -> None:
