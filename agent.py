@@ -644,6 +644,26 @@ async def _execute_function(
         patient_name = fn_args.get("patient_name", "Patient")
         date         = fn_args.get("date", "")
         slot_time    = fn_args.get("slot_time", "")
+
+        # ── Hard weekly-off guard (cannot be bypassed by the model) ──────────
+        try:
+            _booking_day = datetime.strptime(date, "%Y-%m-%d").strftime("%A")
+            _per_clinic_off_raw = db.get_clinic_setting(client_id, "weekly_off_days") or ""
+            _per_clinic_off = [d.strip() for d in _per_clinic_off_raw.split(",") if d.strip()]
+            _all_off = list(set(settings.WEEKLY_OFF_DAYS + _per_clinic_off))
+            if _booking_day in _all_off:
+                return json.dumps({
+                    "success": False,
+                    "weekly_off": True,
+                    "error": f"The clinic is closed on {_booking_day}s. Appointments cannot be booked on weekly off days.",
+                    "suggestion": (
+                        f"Tell the patient: 'Sorry, the clinic is closed every {_booking_day}. "
+                        f"Please choose a different day.' Then offer to check nearby available dates."
+                    ),
+                }), None
+        except Exception:
+            pass  # If date parse fails, let db.create_appointment handle the error
+
         try:
             appt = db.create_appointment(client_id, phone, patient_name, date, slot_time)
             new_patient = db.is_new_patient(client_id, phone, current_appt_id=appt["id"])
@@ -1176,7 +1196,8 @@ Guidelines:
 - Be warm, concise, and helpful. Use a friendly Indian conversational tone.
 - Keep replies short — max 3-4 sentences unless listing slots.
 - Always ask for the patient's **full name** (first and last name) before booking. Do not proceed with booking using a single name like "Raj" — politely ask "Could you please share your full name?" and wait for the complete name.
-- When a patient wants to book, use check_available_slots, then present the slots.
+- When a patient wants to book, use check_available_slots first — ALWAYS, without exception.
+- If check_available_slots returns total_available=0 with a weekly-off note, tell the patient the clinic is closed that day and suggest the next available date. NEVER call create_appointment on a weekly-off day even if the patient insists.
 - After the patient selects a slot, use create_appointment to confirm.
 - After booking, confirm the date, time, and clinic address. A separate confirmation card will also be sent.
 - If no slots are available, suggest nearby dates.
