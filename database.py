@@ -703,10 +703,27 @@ def get_gcal_blocked_slots(client_id: int, date: str) -> list[str]:
 
 
 def block_slots_gcal(client_id: int, date: str, slot_times: list[str]) -> None:
-    """Block specific slots with source='gcal'."""
+    """
+    Block specific slots with source='gcal'.
+    IMPORTANT: skips any slot already blocked manually (source='manual') so
+    a Google Calendar sync never overwrites the doctor's explicit blocks.
+    """
     if not slot_times:
         return
     db_c = get_db()
+
+    # Find slots already blocked by the doctor manually — never overwrite them
+    existing = (
+        db_c.table("blocked_slots")
+        .select("slot_time, source")
+        .eq("client_id", client_id)
+        .eq("block_date", date)
+        .in_("slot_time", slot_times)
+        .execute()
+    ).data or []
+    manual_slots = {r["slot_time"] for r in existing if r.get("source") == "manual"}
+
+    # Only insert gcal blocks for slots that have no manual block
     rows = [
         {
             "client_id":  client_id,
@@ -716,7 +733,10 @@ def block_slots_gcal(client_id: int, date: str, slot_times: list[str]) -> None:
             "source":     "gcal",
         }
         for s in slot_times
+        if s not in manual_slots
     ]
+    if not rows:
+        return
     db_c.table("blocked_slots").upsert(
         rows, on_conflict="client_id,block_date,slot_time"
     ).execute()

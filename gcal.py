@@ -22,9 +22,8 @@ Required env vars (Railway):
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -221,7 +220,7 @@ def _get_all_slots_ist() -> list[str]:
 
 def busy_slots_for_date(
     busy_periods: list[tuple[datetime, datetime]],
-    date_ist: datetime.date,
+    date_ist: _date,
 ) -> list[str]:
     """
     Given a list of UTC busy periods and an IST date, return which clinic

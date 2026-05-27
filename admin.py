@@ -431,7 +431,7 @@ def _referrals_summary() -> str:
 
 async def _dashboard_link(client_id: int) -> str:
     """Return the per-clinic dashboard URL for this client."""
-    client = await db.get_client(client_id)
+    client = db.get_client_by_id(client_id)   # sync — no await
     if client is None:
         return f"❌ Client {client_id} not found."
     key = client.get("dashboard_key")
