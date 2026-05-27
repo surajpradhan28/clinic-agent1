@@ -835,18 +835,41 @@ def render_dashboard() -> str:
     for p in pat_rows:
         pat_counts[p["client_id"]] = pat_counts.get(p["client_id"], 0) + 1
 
-    # Revenue
-    this_month_pfx = month_start[:7]
+    # Revenue — this month, last month, all time
+    this_month_pfx  = month_start[:7]
+    last_month_date = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    last_month_pfx  = last_month_date.strftime("%Y-%m")
     rev_by_client: dict = {}
     rev_this_month = 0.0
+    rev_last_month = 0.0
     rev_all_time   = 0.0
     for p in all_pays:
         cid = p["client_id"]
         amt = float(p.get("amount") or 0)
         rev_by_client[cid] = rev_by_client.get(cid, 0.0) + amt
         rev_all_time += amt
-        if str(p.get("payment_date") or "")[:7] == this_month_pfx:
+        pd_pfx = str(p.get("payment_date") or "")[:7]
+        if pd_pfx == this_month_pfx:
             rev_this_month += amt
+        elif pd_pfx == last_month_pfx:
+            rev_last_month += amt
+
+    # MRR — plan prices × active + trial clients
+    _plan_price = {
+        "starter": settings.PRICE_STARTER,
+        "pro":     settings.PRICE_PRO,
+        "suite":   settings.PRICE_SUITE,
+    }
+    mrr = sum(
+        _plan_price.get((c.get("plan") or "starter").lower(), settings.PRICE_STARTER)
+        for c in clients if c.get("status") in ("active", "trial")
+    )
+
+    # MRR growth % vs last month payments
+    rev_growth_pct = (
+        ((rev_this_month - rev_last_month) / rev_last_month * 100)
+        if rev_last_month > 0 else (100.0 if rev_this_month > 0 else 0.0)
+    )
 
     # Clinic settings (doctor name, address, etc.)
     all_cfg = _q(lambda: db_conn.table("clinic_settings").select("*").execute().data)
@@ -862,6 +885,45 @@ def render_dashboard() -> str:
     suspended_count = sum(1 for c in clients if c.get("status") in ("suspended", "expired"))
     total_bookings  = sum(r.get("bookings", 0) for r in usage_rows)
     total_patients  = sum(pat_counts.values())
+    paid_clients    = active_count + trial_count + grace_count + suspended_count
+    churn_rate      = (suspended_count / paid_clients * 100) if paid_clients > 0 else 0.0
+
+    # Clinics approaching renewal (sub ends in next 14 days, status active)
+    approaching_renewal = []
+    for c in clients:
+        if c.get("status") not in ("active", "grace"):
+            continue
+        sub = subs_map.get(c["id"], {})
+        end_str = sub.get("end_date", "")
+        if not end_str:
+            continue
+        try:
+            end_date = date.fromisoformat(str(end_str)[:10])
+            days_left = (end_date - today).days
+            if 0 <= days_left <= 14:
+                approaching_renewal.append({
+                    "client": c, "sub": sub,
+                    "days_left": days_left, "end_date": end_date,
+                })
+        except Exception:
+            pass
+    approaching_renewal.sort(key=lambda x: x["days_left"])
+
+    # Top clinics by bookings this month
+    top_clinics = sorted(
+        [
+            {
+                "client": next((c for c in clients if c["id"] == cid), {}),
+                "bookings": u.get("bookings", 0),
+                "cancels":  u.get("cancels", 0),
+                "followups": u.get("followups", 0),
+            }
+            for cid, u in usage_map.items()
+            if u.get("bookings", 0) > 0
+        ],
+        key=lambda x: x["bookings"],
+        reverse=True,
+    )[:8]
 
     # ── Build client table rows ───────────────────────────────────────────────
     rows_html = ""
@@ -1123,8 +1185,10 @@ footer{text-align:center;padding:22px;font-size:0.76rem;color:#ccc;margin-top:4p
 
 <div class="container">
 
-  <!-- Stats -->
-  <div class="stats">
+  <!-- Stats Row 1: Client health -->
+  <div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;
+              letter-spacing:.07em;margin-bottom:8px;">&#127970; Clients</div>
+  <div class="stats" style="margin-bottom:14px">
     <div class="stat s-teal">
       <div class="num">""" + str(total_clients) + """</div>
       <div class="lbl">Total Clients</div>
@@ -1143,7 +1207,11 @@ footer{text-align:center;padding:22px;font-size:0.76rem;color:#ccc;margin-top:4p
     </div>
     <div class="stat s-red">
       <div class="num" style="color:#dc3545">""" + str(suspended_count) + """</div>
-      <div class="lbl">Suspended / Expired</div>
+      <div class="lbl">Suspended</div>
+    </div>
+    <div class="stat s-red">
+      <div class="num" style="color:#dc3545">""" + "{:.1f}".format(churn_rate) + """%</div>
+      <div class="lbl">Churn Rate</div>
     </div>
     <div class="stat s-teal">
       <div class="num">""" + str(total_patients) + """</div>
@@ -1153,14 +1221,110 @@ footer{text-align:center;padding:22px;font-size:0.76rem;color:#ccc;margin-top:4p
       <div class="num">""" + str(total_bookings) + """</div>
       <div class="lbl">Bookings This Month</div>
     </div>
+  </div>
+
+  <!-- Stats Row 2: Revenue / MRR -->
+  <div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;
+              letter-spacing:.07em;margin-bottom:8px;">&#128176; Revenue &amp; MRR</div>
+  <div class="stats" style="margin-bottom:28px">
     <div class="stat s-green">
-      <div class="num" style="color:#075E54">&#8377;""" + "{:.0f}".format(rev_this_month) + """</div>
-      <div class="lbl">Revenue This Month</div>
+      <div class="num" style="color:#075E54">&#8377;""" + "{:,.0f}".format(mrr) + """</div>
+      <div class="lbl">MRR (Expected)</div>
+    </div>
+    <div class="stat s-green">
+      <div class="num" style="color:#075E54">&#8377;""" + "{:,.0f}".format(rev_this_month) + """</div>
+      <div class="lbl">Collected This Month</div>
+    </div>
+    <div class="stat s-blue">
+      <div class="num" style="color:#007bff">&#8377;""" + "{:,.0f}".format(rev_last_month) + """</div>
+      <div class="lbl">Last Month</div>
+    </div>
+    <div class="stat """ + ("s-green" if rev_growth_pct >= 0 else "s-red") + """">
+      <div class="num" style="color:""" + ("#28a745" if rev_growth_pct >= 0 else "#dc3545") + """">""" + ("+" if rev_growth_pct >= 0 else "") + "{:.1f}".format(rev_growth_pct) + """%</div>
+      <div class="lbl">MoM Growth</div>
     </div>
     <div class="stat s-purple">
-      <div class="num" style="color:#6f42c1">&#8377;""" + "{:.0f}".format(rev_all_time) + """</div>
+      <div class="num" style="color:#6f42c1">&#8377;""" + "{:,.0f}".format(rev_all_time) + """</div>
       <div class="lbl">Revenue All Time</div>
     </div>
+  </div>
+
+  <!-- Business Metrics: 2-column row -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px">
+
+    <!-- Approaching Renewal -->
+    <div class="section" style="margin-bottom:0">
+      <div class="section-header">
+        <h2>&#9203; Approaching Renewal</h2>
+        <small>Next 14 days &mdash; """ + str(len(approaching_renewal)) + """ clinic(s)</small>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Clinic</th><th>Plan</th>
+            <th>Expires</th><th>Days Left</th>
+          </tr></thead>
+          <tbody>""" + (
+    "".join(
+        (
+            "<tr style='background:{bg}'>"
+            "<td><b>{name}</b><br><small class='muted'>{phone}</small></td>"
+            "<td><span class='plan-badge'>{plan}</span></td>"
+            "<td style='font-size:0.8rem'>{end}</td>"
+            "<td style='text-align:center;font-weight:700;color:{col}'>{days}d</td>"
+            "</tr>"
+        ).format(
+            bg="#fff8f8" if x["days_left"] <= 3 else "#fffdf0" if x["days_left"] <= 7 else "#fff",
+            name=x["client"].get("name","?"),
+            phone=x["client"].get("contact_phone",""),
+            plan=(x["client"].get("plan") or "?").title(),
+            end=x["end_date"].strftime("%d %b"),
+            days=x["days_left"],
+            col="#dc3545" if x["days_left"] <= 3 else "#e6a817" if x["days_left"] <= 7 else "#075E54",
+        )
+        for x in approaching_renewal
+    ) or "<tr><td colspan='4' class='muted' style='text-align:center;padding:20px'>No renewals due soon ✓</td></tr>"
+) + """
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top Clinics by Activity -->
+    <div class="section" style="margin-bottom:0">
+      <div class="section-header">
+        <h2>&#128293; Most Active Clinics</h2>
+        <small>Bookings in """ + month_label + """</small>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Clinic</th><th>Plan</th>
+            <th class="num-cell">Bookings</th><th class="num-cell">Cancels</th>
+          </tr></thead>
+          <tbody>""" + (
+    "".join(
+        (
+            "<tr>"
+            "<td><b>{name}</b></td>"
+            "<td><span class='plan-badge'>{plan}</span></td>"
+            "<td class='num-cell' style='font-weight:700;color:#075E54'>{bk}</td>"
+            "<td class='num-cell muted'>{cx}</td>"
+            "</tr>"
+        ).format(
+            name=x["client"].get("name","?"),
+            plan=(x["client"].get("plan") or "?").title(),
+            bk=x["bookings"],
+            cx=x["cancels"],
+        )
+        for x in top_clinics
+    ) or "<tr><td colspan='4' class='muted' style='text-align:center;padding:20px'>No bookings this month yet.</td></tr>"
+) + """
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <!-- Clients Table -->

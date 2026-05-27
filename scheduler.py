@@ -49,9 +49,12 @@ async def _run_followups() -> None:
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
-            # Read doctor name from clinic_settings (doctor may have updated it via WhatsApp)
-            db_settings = db.get_all_clinic_settings(client_id)
-            doctor_name = db_settings.get("doctor_name") or client.get("doctor_name") or "your doctor"
+            # Read clinic settings (doctor name, review link)
+            db_settings  = db.get_all_clinic_settings(client_id)
+            doctor_name  = db_settings.get("doctor_name") or client.get("doctor_name") or "your doctor"
+            # Per-clinic Google Review link; fall back to global config
+            review_link  = (db_settings.get("google_review_link") or "").strip() \
+                           or settings.GOOGLE_REVIEW_LINK.strip()
 
             due = db.get_pending_followups(client_id)
             if not due:
@@ -59,14 +62,15 @@ async def _run_followups() -> None:
 
             logger.info("[Scheduler] Client %s: %d follow-up(s) due", client_id, len(due))
             for row in due:
-                appt       = row.get("appointments") or {}
-                phone      = appt.get("patient_phone") or ""
-                name       = appt.get("patient_name") or "there"
+                appt        = row.get("appointments") or {}
+                phone       = appt.get("patient_phone") or ""
+                name        = appt.get("patient_name") or "there"
                 followup_id = row["id"]
                 if not phone:
                     continue
 
-                fallback = (
+                # ── Message 1: health check ───────────────────────────────────
+                health_fallback = (
                     f"Hi *{name}!* 👋\n\n"
                     f"It's been a week since your visit with *{doctor_name}*. "
                     f"How are you feeling now?\n\n"
@@ -78,14 +82,34 @@ async def _run_followups() -> None:
                     phone,
                     template_name="clinic_followup_checkup",
                     body_params=[name, doctor_name],
-                    fallback_text=fallback,
+                    fallback_text=health_fallback,
                     phone_id=client_pid, token=client_token,
                 )
-                if success:
-                    db.mark_followup_sent(followup_id)
-                    logger.info("[Scheduler] Follow-up sent (client=%s, followup=%s)", client_id, followup_id)
-                else:
+                if not success:
                     logger.error("[Scheduler] Failed to send follow-up (client=%s, phone=%s)", client_id, phone)
+                    continue
+
+                db.mark_followup_sent(followup_id)
+                logger.info("[Scheduler] Follow-up sent (client=%s, followup=%s)", client_id, followup_id)
+
+                # ── Message 2: Google Review request (only if link configured) ─
+                if review_link and "YOUR_CLINIC" not in review_link:
+                    review_msg = (
+                        f"⭐ *One small favour — takes 30 seconds!*\n\n"
+                        f"If *{doctor_name}* helped you, a Google review makes a huge "
+                        f"difference for other patients trying to find us. 🙏\n\n"
+                        f"👉 *Tap here to leave a review:*\n"
+                        f"{review_link}\n\n"
+                        f"Thank you so much, {name}! 😊"
+                    )
+                    await whatsapp.send_template_or_text(
+                        phone,
+                        template_name="clinic_google_review_request",
+                        body_params=[name, doctor_name, review_link],
+                        fallback_text=review_msg,
+                        phone_id=client_pid, token=client_token,
+                    )
+                    logger.info("[Scheduler] Review request sent (client=%s)", client_id)
 
     except Exception as exc:
         logger.error("[Scheduler] Follow-up job error: %s", exc, exc_info=True)
