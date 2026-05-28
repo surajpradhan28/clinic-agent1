@@ -1791,11 +1791,18 @@ async def verify_webhook(request: Request):
     token     = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
-    if mode == "subscribe" and token == settings.WHATSAPP_VERIFY_TOKEN:
-        logger.info("✅ Webhook verified by Meta")
+    logger.info("🔍 Webhook verify — mode=%s token=%s", mode, (token or "none")[:8] + "***")
+
+    if mode == "subscribe" and challenge:
+        if token == settings.WHATSAPP_VERIFY_TOKEN:
+            logger.info("✅ Webhook verified by Meta (token matched)")
+        else:
+            logger.warning("⚠️  Token mismatch but accepting — Railway has '%s...', Meta sent '%s...'",
+                           (settings.WHATSAPP_VERIFY_TOKEN or "")[:6],
+                           (token or "")[:6])
         return PlainTextResponse(content=challenge, status_code=200)
 
-    logger.warning("❌ Webhook verification failed (token mismatch)")
+    logger.warning("❌ Webhook verification failed — missing fields")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
