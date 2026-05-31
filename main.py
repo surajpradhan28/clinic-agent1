@@ -715,7 +715,29 @@ async def admin_dashboard(request: Request):
         logger.error("[Admin] Dashboard render error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Dashboard error")
 
+@app.get("/privacy")
+async def privacy_policy():
+    html = """<!DOCTYPE html><html><head><title>Privacy Policy – Clinic AI Agent</title>
+    <meta charset="utf-8"><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}h1{color:#25D366}h2{color:#333}</style></head>
+    <body><h1>Privacy Policy</h1><p><strong>Last updated: May 2026</strong></p>
+    <h2>1. Information We Collect</h2><p>We collect patient names, phone numbers, and appointment details provided via WhatsApp to operate the clinic booking service.</p>
+    <h2>2. How We Use Information</h2><p>Information is used solely to manage appointments, send reminders, and provide clinic services. We do not sell or share data with third parties.</p>
+    <h2>3. Data Storage</h2><p>Data is stored securely in encrypted databases. We retain records for up to 2 years for medical record-keeping purposes.</p>
+    <h2>4. WhatsApp Usage</h2><p>We use the WhatsApp Business API to communicate with patients. Message data is handled in accordance with Meta's privacy policy.</p>
+    <h2>5. Contact</h2><p>For privacy concerns, contact us via WhatsApp or email the clinic directly.</p></body></html>"""
+    return HTMLResponse(content=html)
 
+@app.get("/terms")
+async def terms_of_service():
+    html = """<!DOCTYPE html><html><head><title>Terms of Service – Clinic AI Agent</title>
+    <meta charset="utf-8"><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}h1{color:#25D366}h2{color:#333}</style></head>
+    <body><h1>Terms of Service</h1><p><strong>Last updated: May 2026</strong></p>
+    <h2>1. Service Description</h2><p>Clinic AI Agent provides automated appointment booking and management via WhatsApp for healthcare clinics.</p>
+    <h2>2. Use of Service</h2><p>This service is for booking and managing clinic appointments only. Users must provide accurate information.</p>
+    <h2>3. Limitations</h2><p>This is not an emergency service. For medical emergencies, contact emergency services immediately.</p>
+    <h2>4. Cancellations</h2><p>Appointments can be cancelled via WhatsApp. Please cancel at least 2 hours in advance.</p>
+    <h2>5. Acceptance</h2><p>By using this service, you agree to these terms.</p></body></html>"""
+    return HTMLResponse(content=html)
 @app.post("/admin/action")
 async def admin_action(request: Request):
     """
