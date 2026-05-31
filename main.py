@@ -1,25 +1,25 @@
 """
-main.py — FastAPI application + WhatsApp webhook handler (multi-tenant v5).
+main.py â FastAPI application + WhatsApp webhook handler (multi-tenant v5).
 
 Entry point for the Clinic AI Agent.
 
 Endpoints:
-  GET  /                          → Health check
-  GET  /webhook                   → Meta webhook verification (one-time setup)
-  POST /webhook                   → Incoming WhatsApp messages
-  GET  /health                    → Detailed health check (DB + config)
-  GET  /admin?key=<SECRET>        → Super-admin web dashboard (Arun only)
-  POST /admin/action?key=<SECRET> → Dashboard actions (suspend/activate/payment/new_client)
-  GET  /clinic?key=<dashboard_key>→ Per-clinic read-only dashboard (doctors)
+  GET  /                          â Health check
+  GET  /webhook                   â Meta webhook verification (one-time setup)
+  POST /webhook                   â Incoming WhatsApp messages
+  GET  /health                    â Detailed health check (DB + config)
+  GET  /admin?key=<SECRET>        â Super-admin web dashboard (Arun only)
+  POST /admin/action?key=<SECRET> â Dashboard actions (suspend/activate/payment/new_client)
+  GET  /clinic?key=<dashboard_key>â Per-clinic read-only dashboard (doctors)
 
 Routing on every incoming message:
-  0. If sender is ADMIN_PHONE → super-admin command handler (admin.py)
+  0. If sender is ADMIN_PHONE â super-admin command handler (admin.py)
   1. Extract phone_number_id from webhook (which clinic's number was messaged)
-  2. Look up clients table → resolve client row
+  2. Look up clients table â resolve client row
   3. Check client status (active / grace / suspended / expired)
-  4. If doctor → doctor management flow
-  5. If patient has active follow-up → followup flow
-  6. Otherwise → AI booking agent flow
+  4. If doctor â doctor management flow
+  5. If patient has active follow-up â followup flow
+  6. Otherwise â AI booking agent flow
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from config import settings
 from flows.booking import handle_booking_flow
 from flows.followup import handle_followup_response, is_followup_response
 
-# ── Logging setup ─────────────────────────────────────────────────────────────
+# ââ Logging setup âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -55,7 +55,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Razorpay client (lazy-init, only when KEY_ID is configured) ───────────────
+# ââ Razorpay client (lazy-init, only when KEY_ID is configured) âââââââââââââââ
 
 def _razorpay_client():
     """Return a razorpay.Client or None if Razorpay is not configured."""
@@ -65,7 +65,7 @@ def _razorpay_client():
         import razorpay  # optional dependency
         return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
     except ImportError:
-        logger.warning("razorpay package not installed — payment links disabled")
+        logger.warning("razorpay package not installed â payment links disabled")
         return None
 
 
@@ -85,7 +85,7 @@ async def _create_razorpay_link(invoice: dict, client_row: dict) -> str | None:
     phone        = client_row.get("contact_phone") or ""
     token        = invoice["invoice_token"]
     description  = (
-        f"Clinic AI Agent — {invoice.get('plan','').title()} Plan — "
+        f"Clinic AI Agent â {invoice.get('plan','').title()} Plan â "
         f"{invoice.get('period_start','')[:7]}"
     )
     callback_url = f"{settings.SERVER_URL}/invoice/{token}"
@@ -119,7 +119,7 @@ async def _create_razorpay_link(invoice: dict, client_row: dict) -> str | None:
         link_url = link.get("short_url", "")
         if link_id:
             db.update_invoice_payment_link(invoice["id"], link_id, link_url)
-            logger.info("[Razorpay] Payment link created: %s → %s", link_id, link_url)
+            logger.info("[Razorpay] Payment link created: %s â %s", link_id, link_url)
         return link_url or None
     except Exception as exc:
         logger.error("[Razorpay] Failed to create payment link for invoice %s: %s",
@@ -127,11 +127,11 @@ async def _create_razorpay_link(invoice: dict, client_row: dict) -> str | None:
         return None
 
 
-# ── Webhook deduplication (in-memory, 5-minute TTL) ──────────────────────────
+# ââ Webhook deduplication (in-memory, 5-minute TTL) ââââââââââââââââââââââââââ
 # WhatsApp Cloud API sometimes delivers the same webhook event more than once.
 # We track recently-seen message_ids so duplicate deliveries are silently dropped.
 
-_seen_message_ids: dict[str, float] = {}   # message_id → first-seen timestamp
+_seen_message_ids: dict[str, float] = {}   # message_id â first-seen timestamp
 _DEDUP_TTL_SECS = 300                       # 5 minutes
 
 
@@ -150,7 +150,7 @@ def _is_duplicate_message(message_id: str) -> bool:
     return False
 
 
-# ── Per-user rate limiting (in-memory, sliding window) ───────────────────────
+# ââ Per-user rate limiting (in-memory, sliding window) âââââââââââââââââââââââ
 # Max 20 messages per phone number per 60-second window.
 # Protects against accidental message loops and deliberate flooding.
 
@@ -176,12 +176,12 @@ def _is_rate_limited(phone: str) -> bool:
     return False
 
 
-# ── WhatsApp webhook signature verification ───────────────────────────────────
+# ââ WhatsApp webhook signature verification âââââââââââââââââââââââââââââââââââ
 # Meta signs every webhook POST body with HMAC-SHA256 using the App Secret.
 # The signature is in the X-Hub-Signature-256 header as "sha256=<hex>".
 # We verify it to reject forged/spoofed requests before any processing.
 # If WHATSAPP_APP_SECRET is not configured, verification is skipped (logs a
-# warning) — set it in production for security.
+# warning) â set it in production for security.
 
 async def _verify_webhook_signature(request: Request, body: bytes) -> bool:
     """
@@ -191,14 +191,14 @@ async def _verify_webhook_signature(request: Request, body: bytes) -> bool:
     app_secret = settings.WHATSAPP_APP_SECRET
     if not app_secret:
         logger.warning(
-            "⚠️  WHATSAPP_APP_SECRET not set — webhook signature NOT verified. "
+            "â ï¸  WHATSAPP_APP_SECRET not set â webhook signature NOT verified. "
             "Set this in Railway env vars for production security."
         )
         return True
 
     signature_header = request.headers.get("X-Hub-Signature-256", "")
     if not signature_header:
-        logger.warning("🚫 Webhook request missing X-Hub-Signature-256 header — rejected")
+        logger.warning("ð« Webhook request missing X-Hub-Signature-256 header â rejected")
         return False
 
     expected_sig = "sha256=" + hmac.new(
@@ -209,7 +209,7 @@ async def _verify_webhook_signature(request: Request, body: bytes) -> bool:
 
     if not hmac.compare_digest(signature_header, expected_sig):
         logger.warning(
-            "🚫 Webhook signature mismatch (got=%s, expected=%s…) — rejected",
+            "ð« Webhook signature mismatch (got=%s, expected=%sâ¦) â rejected",
             signature_header[:20],
             expected_sig[:20],
         )
@@ -218,25 +218,25 @@ async def _verify_webhook_signature(request: Request, body: bytes) -> bool:
     return True
 
 
-# ── App lifecycle ─────────────────────────────────────────────────────────────
+# ââ App lifecycle âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🏥 Clinic AI Agent starting up…")
+    logger.info("ð¥ Clinic AI Agent starting upâ¦")
     try:
         settings.validate()
-        logger.info("✅ Config validated")
+        logger.info("â Config validated")
     except EnvironmentError as exc:
-        logger.error("❌ Configuration error: %s", exc)
+        logger.error("â Configuration error: %s", exc)
 
     sched.start()
-    logger.info("✅ Scheduler started")
-    logger.info("🚀 Clinic AI Agent ready!")
+    logger.info("â Scheduler started")
+    logger.info("ð Clinic AI Agent ready!")
 
     yield
 
     sched.stop()
-    logger.info("👋 Clinic AI Agent shutting down")
+    logger.info("ð Clinic AI Agent shutting down")
 
 
 app = FastAPI(
@@ -247,7 +247,7 @@ app = FastAPI(
 )
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
+# ââ Health check ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 @app.get("/")
 async def landing_page():
@@ -260,7 +260,7 @@ async def landing_page():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Clinic AI Agent — WhatsApp Bot for Doctor Clinics</title>
+<title>Clinic AI Agent â WhatsApp Bot for Doctor Clinics</title>
 <meta name="description" content="Automate appointment booking, reminders &amp; patient follow-ups on WhatsApp. Built for Indian doctor clinics. No app needed.">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -289,7 +289,7 @@ nav{{position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.95);backdro
 .hero-inner{{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:60px;position:relative}}
 .hero-text{{flex:1;min-width:0}}
 .hero-badge{{display:inline-flex;align-items:center;gap:7px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#25D366;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;margin-bottom:20px;letter-spacing:.3px}}
-.hero-badge::before{{content:'●';font-size:8px;animation:blink 1.5s infinite}}
+.hero-badge::before{{content:'â';font-size:8px;animation:blink 1.5s infinite}}
 @keyframes blink{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
 h1{{font-size:clamp(28px,4vw,46px);font-weight:900;color:#fff;line-height:1.15;letter-spacing:-.5px;margin-bottom:16px}}
 h1 span{{color:var(--green)}}
@@ -429,7 +429,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
 <nav>
   <div class="nav-inner">
     <div class="nav-logo">
-      <div class="nav-icon">🏥</div>
+      <div class="nav-icon">ð¥</div>
       <div><div class="nav-name">Clinic AI Agent</div></div>
     </div>
     <div class="nav-links">
@@ -438,19 +438,19 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </div>
-    <a href="{wa_link}" target="_blank"><button class="btn-nav">💬 WhatsApp Us</button></a>
+    <a href="{wa_link}" target="_blank"><button class="btn-nav">ð¬ WhatsApp Us</button></a>
   </div>
 </nav>
 
 <section class="hero" style="padding:72px 24px 56px">
   <div class="hero-inner">
     <div class="hero-text">
-      <div class="hero-badge">🇮🇳 Built for Indian Clinics</div>
-      <h1>Your Clinic on <span>WhatsApp</span> — 24/7 Automated</h1>
-      <p class="hero-sub">Patients book appointments, get reminders, cancel and reschedule — all on WhatsApp. Zero calls. Zero manual work. Your clinic runs itself.</p>
+      <div class="hero-badge">ð®ð³ Built for Indian Clinics</div>
+      <h1>Your Clinic on <span>WhatsApp</span> â 24/7 Automated</h1>
+      <p class="hero-sub">Patients book appointments, get reminders, cancel and reschedule â all on WhatsApp. Zero calls. Zero manual work. Your clinic runs itself.</p>
       <div class="hero-ctas">
-        <a href="/signup"><button class="btn-primary">🚀 Start Free Trial</button></a>
-        <a href="#pricing"><button class="btn-ghost">View Pricing ↓</button></a>
+        <a href="/signup"><button class="btn-primary">ð Start Free Trial</button></a>
+        <a href="#pricing"><button class="btn-ghost">View Pricing â</button></a>
       </div>
       <div class="hero-trust">
         <div class="hero-trust-text">Works with:</div>
@@ -464,21 +464,21 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     </div>
     <div class="hero-phone">
       <div class="phone-frame"><div class="phone-screen">
-        <div class="p-status"><span>9:41</span><span>🔋</span></div>
+        <div class="p-status"><span>9:41</span><span>ð</span></div>
         <div class="p-header">
           <div class="p-avatar">DS</div>
           <div><div class="p-hname">Dr. Sharma's Clinic</div><div class="p-hstatus">online</div></div>
         </div>
         <div class="p-chat">
           <div class="p-date-chip">Today</div>
-          <div class="p-msg r">Hi, I want to book an appointment<div class="p-time">10:02 ✓✓</div></div>
-          <div class="p-msg l">Welcome! 👋 May I know your name?<div class="p-time">10:02</div></div>
-          <div class="p-msg r">Rahul Gupta<div class="p-time">10:03 ✓✓</div></div>
-          <div class="p-msg l">Hi Rahul! Available tomorrow:<br><b>🕙 10:00 AM · 10:30 AM</b><br>🕙 11:00 AM · 5:00 PM<br><br>Which slot works?<div class="p-time">10:03</div></div>
-          <div class="p-msg r">10:30 AM<div class="p-time">10:03 ✓✓</div></div>
-          <div class="p-msg l">✅ <b>Confirmed!</b><br>📅 Tomorrow · 10:30 AM<br>🏥 Dr. Sharma<br>📍 123 MG Road, Mumbai<div class="p-time">10:04</div></div>
+          <div class="p-msg r">Hi, I want to book an appointment<div class="p-time">10:02 ââ</div></div>
+          <div class="p-msg l">Welcome! ð May I know your name?<div class="p-time">10:02</div></div>
+          <div class="p-msg r">Rahul Gupta<div class="p-time">10:03 ââ</div></div>
+          <div class="p-msg l">Hi Rahul! Available tomorrow:<br><b>ð 10:00 AM Â· 10:30 AM</b><br>ð 11:00 AM Â· 5:00 PM<br><br>Which slot works?<div class="p-time">10:03</div></div>
+          <div class="p-msg r">10:30 AM<div class="p-time">10:03 ââ</div></div>
+          <div class="p-msg l">â <b>Confirmed!</b><br>ð Tomorrow Â· 10:30 AM<br>ð¥ Dr. Sharma<br>ð 123 MG Road, Mumbai<div class="p-time">10:04</div></div>
         </div>
-        <div class="p-input"><div class="p-input-box">Type a message</div><div class="p-send">▶</div></div>
+        <div class="p-input"><div class="p-input-box">Type a message</div><div class="p-send">â¶</div></div>
       </div></div>
     </div>
   </div>
@@ -489,7 +489,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="stat-item"><div class="stat-num"><span>24/7</span></div><div class="stat-lbl">Booking Availability</div></div>
     <div class="stat-item"><div class="stat-num"><span>0</span> Calls</div><div class="stat-lbl">Phone Calls Needed</div></div>
     <div class="stat-item"><div class="stat-num"><span>60</span>s</div><div class="stat-lbl">To Book an Appointment</div></div>
-    <div class="stat-item"><div class="stat-num"><span>−35%</span></div><div class="stat-lbl">Patient No-shows</div></div>
+    <div class="stat-item"><div class="stat-num"><span>â35%</span></div><div class="stat-lbl">Patient No-shows</div></div>
     <div class="stat-item"><div class="stat-num"><span>0</span></div><div class="stat-lbl">App Download Needed</div></div>
   </div>
 </div>
@@ -499,18 +499,18 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="text-center reveal">
       <div class="section-label">Features</div>
       <h2>Everything Your Clinic Needs</h2>
-      <p class="section-sub">All features work over WhatsApp — no app, no website, no training required for patients.</p>
+      <p class="section-sub">All features work over WhatsApp â no app, no website, no training required for patients.</p>
     </div>
     <div class="features-grid">
-      <div class="feat-card reveal"><div class="feat-icon">📅</div><div class="feat-title">Smart Appointment Booking</div><div class="feat-desc">Patients message your clinic WhatsApp and get available slots instantly. Bot confirms the appointment automatically — no human needed.</div><div class="feat-tags"><span class="ftag">24/7 Active</span><span class="ftag">Instant Confirm</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">⏰</div><div class="feat-title">Automatic Reminders</div><div class="feat-desc">Bot sends a WhatsApp reminder 24 hours before every appointment. Patient confirms or cancels with one word. Drastically reduces no-shows.</div><div class="feat-tags"><span class="ftag">Auto-Sent</span><span class="ftag">Zero Effort</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">❌</div><div class="feat-title">Easy Cancellation</div><div class="feat-desc">Patients cancel in 3 messages without calling. Cancelled slot becomes available again instantly for another patient.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Instant</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🔄</div><div class="feat-title">One-Tap Reschedule</div><div class="feat-desc">Patient wants to change their appointment? They send one message, choose a new slot, done. No phone tag, no manual diary editing.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Any Date</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🩺</div><div class="feat-title">Doctor WhatsApp Controls</div><div class="feat-desc">Doctor can block time slots, view today's list, and update clinic notes — all from their own WhatsApp. No separate app to learn.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">Command-Based</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🌅</div><div class="feat-title">Daily Morning Schedule</div><div class="feat-desc">Every morning at 7 AM, the doctor gets a complete WhatsApp summary of the day's appointments — name, time, and new patient flags.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">7 AM Auto</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">💬</div><div class="feat-title">Post-Visit Follow-up</div><div class="feat-desc">7 days after a visit, the bot automatically checks in with the patient and requests a Google review. Build your clinic's reputation passively.</div><div class="feat-tags"><span class="ftag">Auto</span><span class="ftag">Review Boost</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🔒</div><div class="feat-title">No App Required</div><div class="feat-desc">Patients already have WhatsApp. No download, no login, no new platform. The clinic bot works in the same app patients use every day.</div><div class="feat-tags"><span class="ftag">Zero Friction</span><span class="ftag">All Phones</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">📊</div><div class="feat-title">Admin Web Dashboard</div><div class="feat-desc">See all appointments, patient history, and usage stats in a clean web dashboard. Manage everything from any browser — no install needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Web-Based</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð</div><div class="feat-title">Smart Appointment Booking</div><div class="feat-desc">Patients message your clinic WhatsApp and get available slots instantly. Bot confirms the appointment automatically â no human needed.</div><div class="feat-tags"><span class="ftag">24/7 Active</span><span class="ftag">Instant Confirm</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">â°</div><div class="feat-title">Automatic Reminders</div><div class="feat-desc">Bot sends a WhatsApp reminder 24 hours before every appointment. Patient confirms or cancels with one word. Drastically reduces no-shows.</div><div class="feat-tags"><span class="ftag">Auto-Sent</span><span class="ftag">Zero Effort</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">â</div><div class="feat-title">Easy Cancellation</div><div class="feat-desc">Patients cancel in 3 messages without calling. Cancelled slot becomes available again instantly for another patient.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Instant</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð</div><div class="feat-title">One-Tap Reschedule</div><div class="feat-desc">Patient wants to change their appointment? They send one message, choose a new slot, done. No phone tag, no manual diary editing.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Any Date</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð©º</div><div class="feat-title">Doctor WhatsApp Controls</div><div class="feat-desc">Doctor can block time slots, view today's list, and update clinic notes â all from their own WhatsApp. No separate app to learn.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">Command-Based</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð</div><div class="feat-title">Daily Morning Schedule</div><div class="feat-desc">Every morning at 7 AM, the doctor gets a complete WhatsApp summary of the day's appointments â name, time, and new patient flags.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">7 AM Auto</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð¬</div><div class="feat-title">Post-Visit Follow-up</div><div class="feat-desc">7 days after a visit, the bot automatically checks in with the patient and requests a Google review. Build your clinic's reputation passively.</div><div class="feat-tags"><span class="ftag">Auto</span><span class="ftag">Review Boost</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð</div><div class="feat-title">No App Required</div><div class="feat-desc">Patients already have WhatsApp. No download, no login, no new platform. The clinic bot works in the same app patients use every day.</div><div class="feat-tags"><span class="ftag">Zero Friction</span><span class="ftag">All Phones</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">ð</div><div class="feat-title">Admin Web Dashboard</div><div class="feat-desc">See all appointments, patient history, and usage stats in a clean web dashboard. Manage everything from any browser â no install needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Web-Based</span></div></div>
     </div>
   </div>
 </section>
@@ -523,8 +523,8 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <p class="section-sub">We handle the entire setup. You just share your WhatsApp number with patients and the bot does the rest.</p>
     </div>
     <div class="steps">
-      <div class="step reveal"><div class="step-num">1</div><div class="step-title">You Sign Up Online</div><div class="step-desc">Fill in your clinic name, doctor name, address, timing, and plan. Takes 2 minutes. No credit card required for the free trial.</div><div class="step-arrow">→</div></div>
-      <div class="step reveal"><div class="step-num">2</div><div class="step-title">We Activate Your Bot</div><div class="step-desc">We set up your WhatsApp bot on Meta's official API — the same platform used by banks and airlines. Fully secure and verified.</div><div class="step-arrow">→</div></div>
+      <div class="step reveal"><div class="step-num">1</div><div class="step-title">You Sign Up Online</div><div class="step-desc">Fill in your clinic name, doctor name, address, timing, and plan. Takes 2 minutes. No credit card required for the free trial.</div><div class="step-arrow">â</div></div>
+      <div class="step reveal"><div class="step-num">2</div><div class="step-title">We Activate Your Bot</div><div class="step-desc">We set up your WhatsApp bot on Meta's official API â the same platform used by banks and airlines. Fully secure and verified.</div><div class="step-arrow">â</div></div>
       <div class="step reveal"><div class="step-num">3</div><div class="step-title">Patients Start Booking</div><div class="step-desc">Share your clinic WhatsApp number. Patients message it and instantly get appointment slots. Your receptionist can focus on in-clinic work.</div></div>
     </div>
   </div>
@@ -546,55 +546,55 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="pricing-grid">
       <div class="plan-card reveal">
         <div class="plan-name">Starter</div>
-        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">â¹</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual1"></div>
         <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>WhatsApp appointment booking</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Automatic 24h reminders</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Post-visit follow-up messages</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Web admin dashboard</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Cancellation &amp; reschedule</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>WhatsApp appointment booking</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Automatic 24h reminders</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Post-visit follow-up messages</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Web admin dashboard</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Unlimited patients</span></div>
+          <div class="pf"><span class="pf-x">â</span><span style="color:var(--muted)">Cancellation &amp; reschedule</span></div>
+          <div class="pf"><span class="pf-x">â</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
         </div>
         <a href="/signup?plan=starter"><button class="btn-plan outline">Start Free Trial</button></a>
       </div>
       <div class="plan-card popular reveal">
-        <div class="popular-badge">⭐ Most Popular</div>
+        <div class="popular-badge">â­ Most Popular</div>
         <div class="plan-name">Pro</div>
-        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">â¹</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual2"></div>
         <div class="plan-desc">Best for established clinics that want full patient self-service.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>Everything in Starter</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Patient cancellation via WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Patient rescheduling via WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Priority WhatsApp support</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Daily morning schedule</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Everything in Starter</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Patient cancellation via WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Patient rescheduling via WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Priority WhatsApp support</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Unlimited patients</span></div>
+          <div class="pf"><span class="pf-x">â</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
+          <div class="pf"><span class="pf-x">â</span><span style="color:var(--muted)">Daily morning schedule</span></div>
         </div>
         <a href="/signup?plan=pro"><button class="btn-plan primary">Start Free Trial</button></a>
       </div>
       <div class="plan-card reveal">
         <div class="plan-name">Suite</div>
-        <div class="plan-price"><span class="plan-rupee">₹</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">â¹</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual3"></div>
         <div class="plan-desc">For doctors who want full automation and schedule visibility.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>Everything in Pro</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Doctor WhatsApp commands</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Block / unblock time slots</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Daily 7 AM schedule on WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Clinic notes &amp; announcements</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Dedicated support channel</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Everything in Pro</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Doctor WhatsApp commands</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Block / unblock time slots</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Daily 7 AM schedule on WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Clinic notes &amp; announcements</span></div>
+          <div class="pf"><span class="pf-check">â</span><span>Dedicated support channel</span></div>
         </div>
         <a href="/signup?plan=suite"><button class="btn-plan outline">Start Free Trial</button></a>
       </div>
     </div>
-    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: ₹1,500</strong> — We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
-    <div class="setup-fee-note reveal" style="margin-top:8px">✅ 7-day free trial &nbsp;·&nbsp; ✅ No credit card required &nbsp;·&nbsp; ✅ Cancel any time &nbsp;·&nbsp; ✅ All Indian +91 numbers supported</div>
+    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: â¹1,500</strong> â We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
+    <div class="setup-fee-note reveal" style="margin-top:8px">â 7-day free trial &nbsp;Â·&nbsp; â No credit card required &nbsp;Â·&nbsp; â Cancel any time &nbsp;Â·&nbsp; â All Indian +91 numbers supported</div>
   </div>
 </section>
 
@@ -603,12 +603,12 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="text-center reveal">
       <div class="section-label" style="color:rgba(37,211,102,0.8)">Testimonials</div>
       <h2 style="color:#fff">Doctors Love It</h2>
-      <p class="section-sub" style="color:rgba(255,255,255,0.55)">Clinics using Clinic AI Agent save 2–3 hours every day on phone calls and appointment management.</p>
+      <p class="section-sub" style="color:rgba(255,255,255,0.55)">Clinics using Clinic AI Agent save 2â3 hours every day on phone calls and appointment management.</p>
     </div>
     <div class="testi-grid">
-      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"Earlier my receptionist used to spend 2 hours daily just picking up calls for bookings. Now the bot handles everything. Patients actually prefer it — they book at midnight when they remember!"</div><div class="testi-author"><div class="testi-avatar">RS</div><div><div class="testi-name">Dr. Rajesh Sharma</div><div class="testi-role">General Physician, Mumbai</div></div></div></div>
-      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"The 24-hour reminder feature alone is worth the price. My no-show rate dropped from 4–5 patients a day to maybe 1 per week. That is real money saved every month."</div><div class="testi-author"><div class="testi-avatar">PM</div><div><div class="testi-name">Dr. Priya Mehta</div><div class="testi-role">Gynaecologist, Pune</div></div></div></div>
-      <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"I get my full day's schedule on WhatsApp every morning at 7 AM. I know exactly how many patients are coming before I even reach the clinic. Simple but very useful."</div><div class="testi-author"><div class="testi-avatar">AK</div><div><div class="testi-name">Dr. Arvind Kumar</div><div class="testi-role">Paediatrician, Bangalore</div></div></div></div>
+      <div class="testi-card reveal"><div class="testi-stars">âââââ</div><div class="testi-text">"Earlier my receptionist used to spend 2 hours daily just picking up calls for bookings. Now the bot handles everything. Patients actually prefer it â they book at midnight when they remember!"</div><div class="testi-author"><div class="testi-avatar">RS</div><div><div class="testi-name">Dr. Rajesh Sharma</div><div class="testi-role">General Physician, Mumbai</div></div></div></div>
+      <div class="testi-card reveal"><div class="testi-stars">âââââ</div><div class="testi-text">"The 24-hour reminder feature alone is worth the price. My no-show rate dropped from 4â5 patients a day to maybe 1 per week. That is real money saved every month."</div><div class="testi-author"><div class="testi-avatar">PM</div><div><div class="testi-name">Dr. Priya Mehta</div><div class="testi-role">Gynaecologist, Pune</div></div></div></div>
+      <div class="testi-card reveal"><div class="testi-stars">âââââ</div><div class="testi-text">"I get my full day's schedule on WhatsApp every morning at 7 AM. I know exactly how many patients are coming before I even reach the clinic. Simple but very useful."</div><div class="testi-author"><div class="testi-avatar">AK</div><div><div class="testi-name">Dr. Arvind Kumar</div><div class="testi-role">Paediatrician, Bangalore</div></div></div></div>
     </div>
   </div>
 </section>
@@ -617,13 +617,13 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
   <div class="container">
     <div class="text-center reveal"><div class="section-label">FAQ</div><h2>Common Questions</h2></div>
     <div class="faq-list">
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Do patients need to download any app? <span class="faq-chevron">▼</span></div><div class="faq-a">No. Patients just message your existing clinic WhatsApp number. They use the same WhatsApp app they already have. Zero download, zero registration, zero friction.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">How long does setup take? <span class="faq-chevron">▼</span></div><div class="faq-a">We set everything up within 24 hours of receiving your details. You just need to share your clinic name, doctor name, WhatsApp number, address, and timing. We handle the rest.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Will it work with my Indian +91 WhatsApp number? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes, completely. We use Meta's official WhatsApp Cloud API which fully supports Indian +91 numbers. This is the same API used by Zomato, Swiggy, banks, and airlines in India.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">What if a patient asks a question the bot cannot answer? <span class="faq-chevron">▼</span></div><div class="faq-a">The bot handles all booking-related queries automatically. For anything outside its scope, it politely tells the patient to call the clinic directly. You can also take over the conversation manually at any time.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I change my clinic timings or off days? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes. Just WhatsApp us or use the admin dashboard. Changes take effect immediately. You can update timings, block specific dates, or close morning/evening slots independently.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Is my patient data safe? <span class="faq-chevron">▼</span></div><div class="faq-a">All data is stored securely in an encrypted database. We do not share patient information with any third party. Each clinic's data is completely isolated from other clinics on the platform.</div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I cancel my plan? <span class="faq-chevron">▼</span></div><div class="faq-a">Yes, cancel any time with no penalty. For monthly plans, cancellation takes effect at the end of the current billing month. We also offer a 7-day free trial so you can test everything before paying.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Do patients need to download any app? <span class="faq-chevron">â¼</span></div><div class="faq-a">No. Patients just message your existing clinic WhatsApp number. They use the same WhatsApp app they already have. Zero download, zero registration, zero friction.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">How long does setup take? <span class="faq-chevron">â¼</span></div><div class="faq-a">We set everything up within 24 hours of receiving your details. You just need to share your clinic name, doctor name, WhatsApp number, address, and timing. We handle the rest.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Will it work with my Indian +91 WhatsApp number? <span class="faq-chevron">â¼</span></div><div class="faq-a">Yes, completely. We use Meta's official WhatsApp Cloud API which fully supports Indian +91 numbers. This is the same API used by Zomato, Swiggy, banks, and airlines in India.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">What if a patient asks a question the bot cannot answer? <span class="faq-chevron">â¼</span></div><div class="faq-a">The bot handles all booking-related queries automatically. For anything outside its scope, it politely tells the patient to call the clinic directly. You can also take over the conversation manually at any time.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I change my clinic timings or off days? <span class="faq-chevron">â¼</span></div><div class="faq-a">Yes. Just WhatsApp us or use the admin dashboard. Changes take effect immediately. You can update timings, block specific dates, or close morning/evening slots independently.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Is my patient data safe? <span class="faq-chevron">â¼</span></div><div class="faq-a">All data is stored securely in an encrypted database. We do not share patient information with any third party. Each clinic's data is completely isolated from other clinics on the platform.</div></div>
+      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)">Can I cancel my plan? <span class="faq-chevron">â¼</span></div><div class="faq-a">Yes, cancel any time with no penalty. For monthly plans, cancellation takes effect at the end of the current billing month. We also offer a 7-day free trial so you can test everything before paying.</div></div>
     </div>
   </div>
 </section>
@@ -634,13 +634,13 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <h2>Ready to Automate Your Clinic?</h2>
     <p class="section-sub">7-day free trial. Setup in 24 hours. No credit card needed.</p>
     <div class="cta-chips">
-      <div class="cta-chip">✅ No app download</div>
-      <div class="cta-chip">✅ Works on all phones</div>
-      <div class="cta-chip">✅ Indian +91 numbers</div>
-      <div class="cta-chip">✅ 24/7 active</div>
-      <div class="cta-chip">✅ Cancel any time</div>
+      <div class="cta-chip">â No app download</div>
+      <div class="cta-chip">â Works on all phones</div>
+      <div class="cta-chip">â Indian +91 numbers</div>
+      <div class="cta-chip">â 24/7 active</div>
+      <div class="cta-chip">â Cancel any time</div>
     </div>
-    <a href="/signup"><button class="btn-primary" style="font-size:16px;padding:15px 36px">🚀 Start Your Free Trial</button></a>
+    <a href="/signup"><button class="btn-primary" style="font-size:16px;padding:15px 36px">ð Start Your Free Trial</button></a>
     <p style="margin-top:16px;font-size:13px;color:rgba(255,255,255,0.4)">Questions? WhatsApp us: <a href="{wa_demo}" target="_blank" style="color:#25D366;font-weight:700">+91 {wa_phone[2:]}</a></p>
   </div>
 </section>
@@ -648,7 +648,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
 <footer>
   <div class="footer-inner">
     <div class="footer-logo">
-      <div class="nav-icon" style="width:32px;height:32px;font-size:16px">🏥</div>
+      <div class="nav-icon" style="width:32px;height:32px;font-size:16px">ð¥</div>
       <div><div class="footer-name">Clinic AI Agent</div><div class="footer-tagline">WhatsApp Automation for Doctor Clinics</div></div>
     </div>
     <div class="footer-links">
@@ -658,7 +658,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <a href="/signup">Sign Up</a>
       <a href="{wa_link}" target="_blank">WhatsApp</a>
     </div>
-    <div class="footer-copy">© 2025 Clinic AI Agent. All rights reserved.</div>
+    <div class="footer-copy">Â© 2025 Clinic AI Agent. All rights reserved.</div>
   </div>
 </footer>
 
@@ -674,7 +674,7 @@ function toggleBilling(){{
   document.getElementById('lblAnnual').classList.toggle('active',isAnnual);
   [1,2,3].forEach(i=>{{
     document.getElementById('price'+i).textContent=isAnnual?fmt(annual[i-1]):fmt(monthly[i-1]);
-    document.getElementById('annual'+i).textContent=isAnnual?'Billed ₹'+fmt(annual[i-1])+'/year (2 months FREE)':'';
+    document.getElementById('annual'+i).textContent=isAnnual?'Billed â¹'+fmt(annual[i-1])+'/year (2 months FREE)':'';
   }});
 }}
 function toggleFaq(el){{
@@ -694,6 +694,11 @@ document.querySelectorAll('a[href^="#"]').forEach(a=>{{
   }});
 }});
 </script>
+<footer style="background:#0d0d1a; padding:30px; text-align:center; border-top:1px solid #333;">
+  <p style="color:#888; font-size:13px; margin:0 0 10px 0;">© 2026 Clinic AI Agent. All rights reserved.</p>
+  <a href="/privacy" style="color:#25D366; margin:0 15px; text-decoration:none; font-size:13px;">Privacy Policy</a>
+  <a href="/terms" style="color:#25D366; margin:0 15px; text-decoration:none; font-size:13px;">Terms of Service</a>
+</footer>
 </body>
 </html>"""
     return HTMLResponse(content=html)
@@ -702,7 +707,7 @@ document.querySelectorAll('a[href^="#"]').forEach(a=>{{
 @app.get("/admin")
 async def admin_dashboard(request: Request):
     """
-    Web admin dashboard — shows all clients, subscriptions, payments, usage.
+    Web admin dashboard â shows all clients, subscriptions, payments, usage.
     Protected by ADMIN_SECRET query parameter.
     """
     key = request.query_params.get("key", "")
@@ -717,7 +722,7 @@ async def admin_dashboard(request: Request):
 
 @app.get("/privacy")
 async def privacy_policy():
-    html = """<!DOCTYPE html><html><head><title>Privacy Policy – Clinic AI Agent</title>
+    html = """<!DOCTYPE html><html><head><title>Privacy Policy â Clinic AI Agent</title>
     <meta charset="utf-8"><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}h1{color:#25D366}h2{color:#333}</style></head>
     <body><h1>Privacy Policy</h1><p><strong>Last updated: May 2026</strong></p>
     <h2>1. Information We Collect</h2><p>We collect patient names, phone numbers, and appointment details provided via WhatsApp to operate the clinic booking service.</p>
@@ -729,7 +734,7 @@ async def privacy_policy():
 
 @app.get("/terms")
 async def terms_of_service():
-    html = """<!DOCTYPE html><html><head><title>Terms of Service – Clinic AI Agent</title>
+    html = """<!DOCTYPE html><html><head><title>Terms of Service â Clinic AI Agent</title>
     <meta charset="utf-8"><style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}h1{color:#25D366}h2{color:#333}</style></head>
     <body><h1>Terms of Service</h1><p><strong>Last updated: May 2026</strong></p>
     <h2>1. Service Description</h2><p>Clinic AI Agent provides automated appointment booking and management via WhatsApp for healthcare clinics.</p>
@@ -741,7 +746,7 @@ async def terms_of_service():
 @app.post("/admin/action")
 async def admin_action(request: Request):
     """
-    Dashboard action endpoint — called by JS fetch() in the admin HTML.
+    Dashboard action endpoint â called by JS fetch() in the admin HTML.
     Actions: suspend | activate | payment | new_client
     """
     key = request.query_params.get("key", "")
@@ -754,7 +759,7 @@ async def admin_action(request: Request):
         return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
 
     action = body.get("action", "")
-    logger.info("[Admin Action] %s — %s", action, {k: v for k, v in body.items() if k != "action"})
+    logger.info("[Admin Action] %s â %s", action, {k: v for k, v in body.items() if k != "action"})
 
     try:
         if action == "suspend":
@@ -839,8 +844,8 @@ async def clinic_dashboard_view(request: Request):
 async def signup_page(request: Request, plan: str = "", ref: str = ""):
     """
     Self-serve clinic signup page.
-    ?plan=starter|pro|suite   — pre-selects a plan card
-    ?ref=CODE                 — pre-fills referral code
+    ?plan=starter|pro|suite   â pre-selects a plan card
+    ?ref=CODE                 â pre-fills referral code
     """
     plan = plan.lower() if plan in ("starter", "pro", "suite") else ""
     html = f"""<!DOCTYPE html>
@@ -848,7 +853,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Start Free Trial — Clinic AI Agent</title>
+  <title>Start Free Trial â Clinic AI Agent</title>
   <style>
     *{{box-sizing:border-box;margin:0;padding:0;}}
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#1a1a2e;}}
@@ -882,8 +887,8 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
     .plan-card .price span{{font-size:14px;font-weight:400;color:#888;}}
     .plan-card ul{{list-style:none;margin-top:12px;text-align:left;}}
     .plan-card ul li{{font-size:13px;color:#444;padding:3px 0;}}
-    .plan-card ul li::before{{content:"✓ ";color:#2E75B6;font-weight:700;}}
-    .plan-card ul li.no::before{{content:"✗ ";color:#ccc;}}
+    .plan-card ul li::before{{content:"â ";color:#2E75B6;font-weight:700;}}
+    .plan-card ul li.no::before{{content:"â ";color:#ccc;}}
     .plan-card ul li.no{{color:#bbb;}}
 
     /* Form */
@@ -920,12 +925,12 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
 </head>
 <body>
   <div class="top-nav">
-    <a href="/"><span class="nav-logo-icon">🏥</span> ← Back to Home</a>
+    <a href="/"><span class="nav-logo-icon">ð¥</span> â Back to Home</a>
   </div>
   <div class="hero">
-    <div class="trial-badge">🎁 7-Day Free Trial — No Credit Card Needed</div>
+    <div class="trial-badge">ð 7-Day Free Trial â No Credit Card Needed</div>
     <h1>Your Clinic's 24/7 WhatsApp Receptionist</h1>
-    <p>Automate appointment booking, reminders, and patient communication — set up in under 10 minutes.</p>
+    <p>Automate appointment booking, reminders, and patient communication â set up in under 10 minutes.</p>
   </div>
 
   <div class="container">
@@ -933,7 +938,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
     <div class="plans">
       <div class="plan-card {'selected' if plan=='starter' else ''}" id="card-starter" onclick="selectPlan('starter')">
         <h3>Starter</h3>
-        <div class="price">₹999<span>/mo</span></div>
+        <div class="price">â¹999<span>/mo</span></div>
         <ul>
           <li>AI appointment booking</li>
           <li>24-hour reminders</li>
@@ -944,9 +949,9 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
         </ul>
       </div>
       <div class="plan-card {'selected' if plan=='pro' else ''}" id="card-pro" onclick="selectPlan('pro')" style="{'border-color:#2E75B6;' if plan!='suite' else ''}">
-        <div class="badge">⭐ Most Popular</div>
+        <div class="badge">â­ Most Popular</div>
         <h3>Pro</h3>
-        <div class="price">₹1,999<span>/mo</span></div>
+        <div class="price">â¹1,999<span>/mo</span></div>
         <ul>
           <li>Everything in Starter</li>
           <li>Cancel &amp; reschedule</li>
@@ -958,7 +963,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
       </div>
       <div class="plan-card {'selected' if plan=='suite' else ''}" id="card-suite" onclick="selectPlan('suite')">
         <h3>Suite</h3>
-        <div class="price">₹2,999<span>/mo</span></div>
+        <div class="price">â¹2,999<span>/mo</span></div>
         <ul>
           <li>Everything in Pro</li>
           <li>Daily schedule to doctor</li>
@@ -1008,13 +1013,13 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
           <div class="field full">
             <label for="plan">Selected Plan *</label>
             <select id="plan" name="plan" required>
-              <option value="starter" {'selected' if plan=='starter' else ''}>Starter — ₹999/month</option>
-              <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro — ₹1,999/month ⭐ Most Popular</option>
-              <option value="suite" {'selected' if plan=='suite' else ''}>Suite — ₹2,999/month</option>
+              <option value="starter" {'selected' if plan=='starter' else ''}>Starter â â¹999/month</option>
+              <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro â â¹1,999/month â­ Most Popular</option>
+              <option value="suite" {'selected' if plan=='suite' else ''}>Suite â â¹2,999/month</option>
             </select>
           </div>
         </div>
-        <button type="submit" class="submit-btn">🚀 Start My Free 7-Day Trial</button>
+        <button type="submit" class="submit-btn">ð Start My Free 7-Day Trial</button>
         <p class="terms">By signing up you agree to our
           <a href="/privacy" target="_blank">Privacy Policy</a> and
           <a href="/terms" target="_blank">Terms of Service</a>.
@@ -1091,7 +1096,7 @@ async def signup_submit(request: Request):
             .execute()
         )
         if existing.data:
-            # Already exists — show friendly message
+            # Already exists â show friendly message
             return HTMLResponse(content=_signup_already_exists_html(clinic_name, contact_phone), status_code=200)
 
         new_client = (
@@ -1137,14 +1142,14 @@ async def signup_submit(request: Request):
     # Notify admin via WhatsApp
     if settings.ADMIN_PHONE:
         admin_msg = (
-            f"🆕 *New Clinic Signup!*\n\n"
-            f"🏥 {clinic_name}\n"
-            f"👨‍⚕️ {doctor_name}\n"
-            f"📱 {contact_phone}\n"
-            f"📍 {city}\n"
-            f"📦 Plan: {plan.title()}\n"
-            f"{'🔗 Referred by: ' + referred_by if referred_by else ''}\n\n"
-            f"⚡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
+            f"ð *New Clinic Signup!*\n\n"
+            f"ð¥ {clinic_name}\n"
+            f"ð¨ââï¸ {doctor_name}\n"
+            f"ð± {contact_phone}\n"
+            f"ð {city}\n"
+            f"ð¦ Plan: {plan.title()}\n"
+            f"{'ð Referred by: ' + referred_by if referred_by else ''}\n\n"
+            f"â¡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
             f"Client ID: {client_id}"
         )
         try:
@@ -1161,14 +1166,14 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral
     ref_link     = f"{signup_url}?ref={referral_code}" if referral_code else signup_url
     referral_box = f"""
     <div class="referral-box">
-      <div class="ref-title">🤝 Refer a Doctor, Get 1 Free Month</div>
+      <div class="ref-title">ð¤ Refer a Doctor, Get 1 Free Month</div>
       <p style="font-size:13px;color:#444;margin-bottom:10px;">
-        Share your unique referral link. Every doctor friend who subscribes earns you <strong>1 free month</strong> — no limit!
+        Share your unique referral link. Every doctor friend who subscribes earns you <strong>1 free month</strong> â no limit!
       </p>
       <div class="ref-code">{referral_code}</div>
       <div class="ref-url" id="refUrl">{ref_link}</div>
-      <button class="copy-btn" onclick="copyLink()">📋 Copy Referral Link</button>
-      <div id="copied" style="display:none;color:#2E7D32;font-size:13px;margin-top:6px;">✅ Copied!</div>
+      <button class="copy-btn" onclick="copyLink()">ð Copy Referral Link</button>
+      <div id="copied" style="display:none;color:#2E7D32;font-size:13px;margin-top:6px;">â Copied!</div>
     </div>""" if referral_code else ""
 
     return f"""<!DOCTYPE html>
@@ -1176,7 +1181,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>You're Signed Up! — Clinic AI Agent</title>
+  <title>You're Signed Up! â Clinic AI Agent</title>
   <style>
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;
          display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}}
@@ -1208,7 +1213,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral
 </head>
 <body>
   <div class="card">
-    <div class="icon">🎉</div>
+    <div class="icon">ð</div>
     <h1>You're all set, {doctor_name.split()[-1]}!</h1>
     <div class="badge">7-Day Free Trial Started</div>
     <br><br>
@@ -1218,7 +1223,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral
     <div class="steps">
       <h3>What happens next</h3>
       <div class="step"><div class="num">1</div>
-        <div>Our team sets up your dedicated WhatsApp Business number — usually within a few hours.</div>
+        <div>Our team sets up your dedicated WhatsApp Business number â usually within a few hours.</div>
       </div>
       <div class="step"><div class="num">2</div>
         <div>You'll receive a WhatsApp welcome message with setup instructions.</div>
@@ -1227,7 +1232,7 @@ def _signup_success_html(clinic_name: str, doctor_name: str, plan: str, referral
         <div>Send your first test booking and see the AI in action. Setup takes under 10 minutes.</div>
       </div>
       <div class="step"><div class="num">4</div>
-        <div>Your 7-day trial begins from activation day — full access, no credit card needed.</div>
+        <div>Your 7-day trial begins from activation day â full access, no credit card needed.</div>
       </div>
     </div>
 
@@ -1263,7 +1268,7 @@ def _signup_already_exists_html(clinic_name: str, phone: str) -> str:
 </head>
 <body>
   <div class="card">
-    <div style="font-size:48px;margin-bottom:16px;">👋</div>
+    <div style="font-size:48px;margin-bottom:16px;">ð</div>
     <h2 style="color:#1A3A5C;margin-bottom:12px;">You're already registered!</h2>
     <p style="color:#555;font-size:15px;">
       A clinic account already exists for <strong>{phone}</strong>.
@@ -1271,7 +1276,7 @@ def _signup_already_exists_html(clinic_name: str, phone: str) -> str:
     </p>
     <a href="/signup" style="display:inline-block;margin-top:24px;background:#2E75B6;color:#fff;
        padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">
-      ← Back to Signup
+      â Back to Signup
     </a>
   </div>
 </body>
@@ -1289,7 +1294,7 @@ async def invoice_view(token: str):
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Pull client info — enriched by get_invoice_by_token with _clinic_name etc.
+    # Pull client info â enriched by get_invoice_by_token with _clinic_name etc.
     clinic_name   = invoice.get("_clinic_name")  or (invoice.get("clients") or {}).get("name", "Clinic")
     contact_name  = invoice.get("_doctor_name")  or (invoice.get("clients") or {}).get("doctor_name", "")
     contact_email = (invoice.get("clients") or {}).get("contact_email", "")
@@ -1309,10 +1314,10 @@ async def invoice_view(token: str):
         except Exception:
             return d
 
-    period_label = f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}"
+    period_label = f"{_fmt(invoice['period_start'])} â {_fmt(invoice['period_end'])}"
     due_str      = _fmt(invoice["due_date"])
     issued_str   = _fmt(invoice.get("sent_at", invoice["created_at"])[:10])
-    amount_str   = f"₹{float(invoice['amount']):,.2f}"
+    amount_str   = f"â¹{float(invoice['amount']):,.2f}"
     status       = invoice["status"].upper()
     status_color = {
         "SENT":    "#1565C0",
@@ -1331,7 +1336,7 @@ async def invoice_view(token: str):
         paid_banner = f"""
         <div style="background:#E8F5E9;border:2px solid #4CAF50;border-radius:8px;
                     padding:12px 20px;margin-bottom:24px;text-align:center;">
-          <span style="color:#2E7D32;font-size:18px;font-weight:bold;">✅ PAID{(' — ' + paid_at) if paid_at else ''}</span>
+          <span style="color:#2E7D32;font-size:18px;font-weight:bold;">â PAID{(' â ' + paid_at) if paid_at else ''}</span>
         </div>"""
 
     # Build payment section (pre-computed to avoid nested f-string issues)
@@ -1498,7 +1503,7 @@ async def invoice_view(token: str):
         <tbody>
           <tr>
             <td>
-              <strong>Clinic AI Agent — {plan_label} Plan</strong><br>
+              <strong>Clinic AI Agent â {plan_label} Plan</strong><br>
               <span style="color:#666;font-size:13px;">{plan_desc}</span>
             </td>
             <td style="color:#555;font-size:13px;">{period_label}</td>
@@ -1512,7 +1517,7 @@ async def invoice_view(token: str):
       </table>
 
       <div class="payment-box">
-        <h3>💳 Payment</h3>
+        <h3>ð³ Payment</h3>
         {payment_section}
       </div>
 
@@ -1520,12 +1525,12 @@ async def invoice_view(token: str):
         <button onclick="window.print()" style="
           background:#1A3A5C;color:#fff;border:none;padding:10px 28px;
           border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;
-        ">🖨️ Print / Save as PDF</button>
+        ">ð¨ï¸ Print / Save as PDF</button>
       </p>
 
       <div class="footer-note">
         This is a computer-generated invoice. For queries, contact {settings.INVOICE_BUSINESS_NAME}.<br>
-        Thank you for your continued trust. 🙏
+        Thank you for your continued trust. ð
       </div>
     </div>
   </div>
@@ -1539,7 +1544,7 @@ async def invoice_view(token: str):
 async def calendar_connect(dashboard_key: str):
     """
     Step 1 of Google Calendar OAuth.
-    Doctor visits this URL from their clinic dashboard → redirected to Google consent.
+    Doctor visits this URL from their clinic dashboard â redirected to Google consent.
 
     URL: /calendar/connect/<dashboard_key>
     """
@@ -1564,7 +1569,7 @@ async def calendar_connect(dashboard_key: str):
 @app.get("/calendar/callback")
 async def calendar_callback(request: Request):
     """
-    Step 2 of Google Calendar OAuth — Google redirects here after consent.
+    Step 2 of Google Calendar OAuth â Google redirects here after consent.
     Exchanges the auth code for tokens and stores them.
     """
     params = dict(request.query_params)
@@ -1574,7 +1579,7 @@ async def calendar_callback(request: Request):
 
     if error:
         return HTMLResponse(
-            f"<h2>❌ Google Calendar connection failed</h2><p>{error}</p>",
+            f"<h2>â Google Calendar connection failed</h2><p>{error}</p>",
             status_code=400,
         )
     if not code or not state:
@@ -1592,7 +1597,7 @@ async def calendar_callback(request: Request):
     except Exception as exc:
         logger.error("[GCal] Token exchange failed for client=%s: %s", client_id, exc)
         return HTMLResponse(
-            "<h2>❌ Connection failed</h2>"
+            "<h2>â Connection failed</h2>"
             f"<p>Could not complete Google authorisation: {exc}</p>",
             status_code=500,
         )
@@ -1608,9 +1613,9 @@ async def calendar_callback(request: Request):
         if doctor_phone:
             await whatsapp.send_text(
                 doctor_phone,
-                f"✅ *Google Calendar Connected!*\n\n"
+                f"â *Google Calendar Connected!*\n\n"
                 f"Hi {clinic_name}! Your Google Calendar is now linked.\n\n"
-                f"🔄 Sync runs every 15 minutes — any event you mark as *Busy* in Google Calendar "
+                f"ð Sync runs every 15 minutes â any event you mark as *Busy* in Google Calendar "
                 f"will automatically block that slot here.\n\n"
                 f"Events marked as *Free* or *Tentative* are ignored.\n\n"
                 f"To disconnect: visit your clinic dashboard.",
@@ -1639,7 +1644,7 @@ async def calendar_callback(request: Request):
 </head>
 <body>
   <div class="card">
-    <div class="icon">📅✅</div>
+    <div class="icon">ðâ</div>
     <h1>Google Calendar Connected!</h1>
     <p>Your calendar is now synced. Busy events will automatically block clinic slots every 15 minutes.</p>
     <div class="note">
@@ -1654,9 +1659,9 @@ async def calendar_callback(request: Request):
 @app.post("/razorpay/webhook")
 async def razorpay_webhook(request: Request):
     """
-    Razorpay payment webhook — auto-marks invoices paid.
+    Razorpay payment webhook â auto-marks invoices paid.
 
-    Setup in Razorpay Dashboard → Webhooks:
+    Setup in Razorpay Dashboard â Webhooks:
       URL:    https://<your-railway-domain>/razorpay/webhook
       Events: payment_link.paid
       Secret: set RAZORPAY_WEBHOOK_SECRET env var to the same value
@@ -1666,13 +1671,13 @@ async def razorpay_webhook(request: Request):
       2. Find invoice by razorpay_payment_link_id (reference_id = invoice_token)
       3. Mark invoice paid + store razorpay_payment_id
       4. Record payment in payments table
-      5. Activate client subscription (trial → active)
-      6. WhatsApp doctor "✅ Payment received"
+      5. Activate client subscription (trial â active)
+      6. WhatsApp doctor "â Payment received"
       7. Notify admin
     """
     raw_body = await request.body()
 
-    # ── Signature verification ────────────────────────────────────────────────
+    # ââ Signature verification ââââââââââââââââââââââââââââââââââââââââââââââââ
     if settings.RAZORPAY_WEBHOOK_SECRET:
         sig = request.headers.get("X-Razorpay-Signature", "")
         expected = hmac.new(
@@ -1681,10 +1686,10 @@ async def razorpay_webhook(request: Request):
             hashlib.sha256,
         ).hexdigest()
         if not hmac.compare_digest(expected, sig):
-            logger.warning("[Razorpay] Webhook signature mismatch — rejecting")
+            logger.warning("[Razorpay] Webhook signature mismatch â rejecting")
             raise HTTPException(status_code=400, detail="Invalid signature")
     else:
-        logger.warning("[Razorpay] RAZORPAY_WEBHOOK_SECRET not set — skipping signature check")
+        logger.warning("[Razorpay] RAZORPAY_WEBHOOK_SECRET not set â skipping signature check")
 
     try:
         payload = await request.json()
@@ -1697,7 +1702,7 @@ async def razorpay_webhook(request: Request):
     if event != "payment_link.paid":
         return JSONResponse({"status": "ignored", "event": event})
 
-    # ── Extract identifiers ───────────────────────────────────────────────────
+    # ââ Extract identifiers âââââââââââââââââââââââââââââââââââââââââââââââââââ
     try:
         pl_entity  = payload["payload"]["payment_link"]["entity"]
         pay_entity = payload["payload"]["payment"]["entity"]
@@ -1709,7 +1714,7 @@ async def razorpay_webhook(request: Request):
         logger.error("[Razorpay] Malformed webhook payload: %s", exc)
         raise HTTPException(status_code=400, detail="Malformed payload")
 
-    # ── Find invoice ──────────────────────────────────────────────────────────
+    # ââ Find invoice ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     # Try by payment link ID first, then fall back to reference_id (invoice_token)
     invoice = db.get_invoice_by_razorpay_link(link_id)
     if not invoice:
@@ -1719,16 +1724,16 @@ async def razorpay_webhook(request: Request):
         return JSONResponse({"status": "invoice_not_found"})
 
     if invoice["status"] == "paid":
-        logger.info("[Razorpay] Invoice %s already paid — skipping", invoice["id"])
+        logger.info("[Razorpay] Invoice %s already paid â skipping", invoice["id"])
         return JSONResponse({"status": "already_paid"})
 
     client_id  = invoice["client_id"]
     amount_inr = amount_paid_paise / 100
 
-    # ── Mark invoice paid ─────────────────────────────────────────────────────
+    # ââ Mark invoice paid âââââââââââââââââââââââââââââââââââââââââââââââââââââ
     db.mark_invoice_paid(invoice["id"], client_id, razorpay_payment_id=rzp_pay_id)
 
-    # ── Record payment in payments table ──────────────────────────────────────
+    # ââ Record payment in payments table ââââââââââââââââââââââââââââââââââââââ
     db.record_payment(
         client_id=client_id,
         amount=amount_inr,
@@ -1736,13 +1741,13 @@ async def razorpay_webhook(request: Request):
         notes=f"Auto-detected via Razorpay webhook. pay_id={rzp_pay_id}",
     )
 
-    # ── Activate client if still on trial ────────────────────────────────────
+    # ââ Activate client if still on trial ââââââââââââââââââââââââââââââââââââ
     client_row = db.get_client_by_id(client_id)
     if client_row and client_row.get("status") in ("trial", "pending", "suspended"):
         db.update_client_status(client_id, "active")
         logger.info("[Razorpay] Client %s activated after payment", client_id)
 
-    # ── WhatsApp doctor: payment confirmed ────────────────────────────────────
+    # ââ WhatsApp doctor: payment confirmed ââââââââââââââââââââââââââââââââââââ
     if client_row:
         doctor_phone  = client_row.get("contact_phone") or ""
         client_pid    = client_row.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
@@ -1754,13 +1759,13 @@ async def razorpay_webhook(request: Request):
 
         if doctor_phone:
             confirm_msg = (
-                f"✅ *Payment Received — Thank you, Dr. {doctor_name}!*\n\n"
+                f"â *Payment Received â Thank you, Dr. {doctor_name}!*\n\n"
                 f"Invoice: *{inv_num}*\n"
                 f"Plan: *{plan_label}*\n"
-                f"Amount: *₹{amount_inr:,.0f}*\n"
+                f"Amount: *â¹{amount_inr:,.0f}*\n"
                 f"Payment ID: `{rzp_pay_id}`\n\n"
                 f"Your Clinic AI Agent subscription is active. "
-                f"All features are running as usual. 🙏"
+                f"All features are running as usual. ð"
             )
             try:
                 await whatsapp.send_text(doctor_phone, confirm_msg, phone_id=client_pid, token=client_token)
@@ -1773,16 +1778,16 @@ async def razorpay_webhook(request: Request):
             try:
                 await whatsapp.send_text(
                     settings.ADMIN_PHONE,
-                    f"💰 *Auto-payment received!*\n\n"
-                    f"🏥 {clinic_name} [{client_id}]\n"
-                    f"📋 Invoice: {inv_num}\n"
-                    f"💵 ₹{amount_inr:,.0f} via Razorpay\n"
-                    f"🔑 {rzp_pay_id}",
+                    f"ð° *Auto-payment received!*\n\n"
+                    f"ð¥ {clinic_name} [{client_id}]\n"
+                    f"ð Invoice: {inv_num}\n"
+                    f"ðµ â¹{amount_inr:,.0f} via Razorpay\n"
+                    f"ð {rzp_pay_id}",
                 )
             except Exception:
                 pass
 
-    logger.info("[Razorpay] Invoice %s marked paid (₹%.0f, pay_id=%s)", invoice["id"], amount_inr, rzp_pay_id)
+    logger.info("[Razorpay] Invoice %s marked paid (â¹%.0f, pay_id=%s)", invoice["id"], amount_inr, rzp_pay_id)
     return JSONResponse({"status": "ok"})
 
 
@@ -1804,7 +1809,7 @@ async def health():
     )
 
 
-# ── WhatsApp webhook verification (GET) ───────────────────────────────────────
+# ââ WhatsApp webhook verification (GET) âââââââââââââââââââââââââââââââââââââââ
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
@@ -1813,22 +1818,22 @@ async def verify_webhook(request: Request):
     token     = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
-    logger.info("🔍 Webhook verify — mode=%s token=%s", mode, (token or "none")[:8] + "***")
+    logger.info("ð Webhook verify â mode=%s token=%s", mode, (token or "none")[:8] + "***")
 
     if mode == "subscribe" and challenge:
         if token == settings.WHATSAPP_VERIFY_TOKEN:
-            logger.info("✅ Webhook verified by Meta (token matched)")
+            logger.info("â Webhook verified by Meta (token matched)")
         else:
-            logger.warning("⚠️  Token mismatch but accepting — Railway has '%s...', Meta sent '%s...'",
+            logger.warning("â ï¸  Token mismatch but accepting â Railway has '%s...', Meta sent '%s...'",
                            (settings.WHATSAPP_VERIFY_TOKEN or "")[:6],
                            (token or "")[:6])
         return PlainTextResponse(content=challenge, status_code=200)
 
-    logger.warning("❌ Webhook verification failed — missing fields")
+    logger.warning("â Webhook verification failed â missing fields")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
-# ── WhatsApp incoming messages (POST) ─────────────────────────────────────────
+# ââ WhatsApp incoming messages (POST) âââââââââââââââââââââââââââââââââââââââââ
 
 @app.post("/webhook")
 async def receive_message(request: Request):
@@ -1839,18 +1844,18 @@ async def receive_message(request: Request):
       - Identifies clinic by phone_number_id (which of your registered numbers was messaged)
       - Passes resolved client dict to all downstream flows
     """
-    # ── Read raw body first (needed for HMAC verification) ────────────────────
+    # ââ Read raw body first (needed for HMAC verification) ââââââââââââââââââââ
     try:
         raw_body = await request.body()
     except Exception:
         logger.error("Failed to read webhook body")
         return JSONResponse({"status": "error"}, status_code=400)
 
-    # ── Verify Meta webhook signature ─────────────────────────────────────────
+    # ââ Verify Meta webhook signature âââââââââââââââââââââââââââââââââââââââââ
     if not await _verify_webhook_signature(request, raw_body):
         return JSONResponse({"status": "forbidden"}, status_code=403)
 
-    # ── Parse JSON ────────────────────────────────────────────────────────────
+    # ââ Parse JSON ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     try:
         import json as _json
         body = _json.loads(raw_body)
@@ -1870,19 +1875,19 @@ async def receive_message(request: Request):
         message_id       = msg.get("message_id", "")
         phone_number_id  = msg.get("phone_number_id", "")
 
-        # ── Deduplication: drop re-delivered webhooks ─────────────────────────
+        # ââ Deduplication: drop re-delivered webhooks âââââââââââââââââââââââââ
         if _is_duplicate_message(message_id):
-            logger.info("⚡ Duplicate message_id=%s from %s — ignored", message_id, phone)
+            logger.info("â¡ Duplicate message_id=%s from %s â ignored", message_id, phone)
             return JSONResponse({"status": "duplicate"})
 
-        # ── Rate limiting: protect against flooding ───────────────────────────
+        # ââ Rate limiting: protect against flooding âââââââââââââââââââââââââââ
         if _is_rate_limited(phone):
-            logger.warning("🚫 Rate limit hit for %s — dropping message", phone)
+            logger.warning("ð« Rate limit hit for %s â dropping message", phone)
             return JSONResponse({"status": "rate_limited"})
 
-        # ── STEP 0: Super-admin routing ───────────────────────────────────────
+        # ââ STEP 0: Super-admin routing âââââââââââââââââââââââââââââââââââââââ
         if _is_admin(phone):
-            logger.info("[Router] → Admin flow (from=%s)", phone)
+            logger.info("[Router] â Admin flow (from=%s)", phone)
             await admin_handler.handle_admin_message(
                 phone=phone,
                 text=text,
@@ -1890,35 +1895,35 @@ async def receive_message(request: Request):
             )
             return JSONResponse({"status": "ok", "flow": "admin"})
 
-        # ── STEP 1: Resolve which clinic this message is for ──────────────────
+        # ââ STEP 1: Resolve which clinic this message is for ââââââââââââââââââ
         client = _resolve_client(phone_number_id)
         if client is None:
-            # Unknown phone number ID — not a registered clinic
+            # Unknown phone number ID â not a registered clinic
             logger.warning(
-                "Unrecognised phone_number_id '%s' — no client found, ignoring",
+                "Unrecognised phone_number_id '%s' â no client found, ignoring",
                 phone_number_id,
             )
             return JSONResponse({"status": "ignored", "reason": "unknown_phone_id"})
 
         client_id    = client["id"]
         client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
-        client_token = client.get("whatsapp_token") or None  # None → falls back to global token
+        client_token = client.get("whatsapp_token") or None  # None â falls back to global token
 
         logger.info(
-            "📩 Message from %s (%s) → client=%s (%s): %s",
+            "ð© Message from %s (%s) â client=%s (%s): %s",
             phone, name, client_id, client["name"], text[:80],
         )
 
-        # ── STEP 2: Check subscription status ────────────────────────────────
+        # ââ STEP 2: Check subscription status ââââââââââââââââââââââââââââââââ
         if client["status"] in ("suspended", "expired"):
             logger.info(
-                "[Router] Client %s is %s — blocking message", client_id, client["status"]
+                "[Router] Client %s is %s â blocking message", client_id, client["status"]
             )
             # Only tell the doctor, not the patient
             if _is_doctor(phone, client):
                 await whatsapp.send_text(
                     phone,
-                    "⚠️ Your subscription has expired or been suspended.\n"
+                    "â ï¸ Your subscription has expired or been suspended.\n"
                     "Please contact support to renew and restore service.",
                     phone_id=client_pid,
                     token=client_token,
@@ -1930,9 +1935,9 @@ async def receive_message(request: Request):
             grace_until = client.get("grace_until") or "soon"
             await whatsapp.send_text(
                 phone,
-                f"⚠️ *Subscription Expired — Grace Period*\n\n"
+                f"â ï¸ *Subscription Expired â Grace Period*\n\n"
                 f"Your subscription has expired but service continues until *{grace_until}*.\n"
-                f"Please renew now to avoid interruption. Contact support. 🙏",
+                f"Please renew now to avoid interruption. Contact support. ð",
                 phone_id=client_pid,
                 token=client_token,
             )
@@ -1940,58 +1945,58 @@ async def receive_message(request: Request):
         if not text:
             await whatsapp.send_text(
                 phone,
-                "Sorry, I can only process text messages right now. Please type your message. 😊",
+                "Sorry, I can only process text messages right now. Please type your message. ð",
                 phone_id=client_pid,
                 token=client_token,
             )
             return JSONResponse({"status": "unsupported_type"})
 
-        # ── STEP 3: Doctor flow (skip patient tracking + follow-up check) ─────
+        # ââ STEP 3: Doctor flow (skip patient tracking + follow-up check) âââââ
         if _is_doctor(phone, client):
-            logger.info("[Router] → Doctor flow (client=%s)", client_id)
+            logger.info("[Router] â Doctor flow (client=%s)", client_id)
             if message_id:
                 await whatsapp.mark_as_read(message_id, phone_id=client_pid, token=client_token)
             await handle_booking_flow(phone, name, text, client=client)
             return JSONResponse({"status": "ok", "flow": "doctor"})
 
-        # ── STEP 4: Save / update patient record ──────────────────────────────
+        # ââ STEP 4: Save / update patient record ââââââââââââââââââââââââââââââ
         db.upsert_patient(client_id, phone, name)
 
         if message_id:
             await whatsapp.mark_as_read(message_id, phone_id=client_pid, token=client_token)
 
-        # ── STEP 5: Active follow-up? ─────────────────────────────────────────
+        # ââ STEP 5: Active follow-up? âââââââââââââââââââââââââââââââââââââââââ
         if await is_followup_response(client_id, phone):
-            logger.info("[Router] → Follow-up flow (client=%s)", client_id)
+            logger.info("[Router] â Follow-up flow (client=%s)", client_id)
             await handle_followup_response(phone, name, text, client=client)
             return JSONResponse({"status": "ok", "flow": "followup"})
 
-        # ── STEP 6: AI booking agent ──────────────────────────────────────────
-        logger.info("[Router] → Booking flow (client=%s)", client_id)
+        # ââ STEP 6: AI booking agent ââââââââââââââââââââââââââââââââââââââââââ
+        logger.info("[Router] â Booking flow (client=%s)", client_id)
         await handle_booking_flow(phone, name, text, client=client)
         return JSONResponse({"status": "ok", "flow": "booking"})
 
     except Exception as exc:
         logger.error("Unhandled error in webhook handler: %s", exc, exc_info=True)
 
-        # ── Notify the patient / doctor that triggered the error ──────────────
+        # ââ Notify the patient / doctor that triggered the error ââââââââââââââ
         if phone:
             try:
                 await whatsapp.send_text(
                     phone,
-                    "Sorry, something went wrong on our end. Please try again in a moment. 🙏",
+                    "Sorry, something went wrong on our end. Please try again in a moment. ð",
                 )
             except Exception:
                 pass
 
-        # ── Alert admin on WhatsApp ───────────────────────────────────────────
+        # ââ Alert admin on WhatsApp âââââââââââââââââââââââââââââââââââââââââââ
         if settings.ADMIN_PHONE:
             try:
                 tb_lines = traceback.format_exc().splitlines()
                 # Keep last 6 lines of traceback (most relevant)
                 tb_short = "\n".join(tb_lines[-6:]) if len(tb_lines) > 6 else "\n".join(tb_lines)
                 alert_msg = (
-                    f"🚨 *Bot Error Alert*\n\n"
+                    f"ð¨ *Bot Error Alert*\n\n"
                     f"*Error:* {type(exc).__name__}: {str(exc)[:200]}\n"
                     f"*Triggered by:* {phone or 'unknown'}\n\n"
                     f"*Traceback:*\n```\n{tb_short}\n```"
@@ -2003,14 +2008,14 @@ async def receive_message(request: Request):
         return JSONResponse({"status": "error"}, status_code=200)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ââ Helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def _resolve_client(phone_number_id: str) -> dict | None:
     """
     Look up the client by their Meta phone_number_id.
 
     Falls back to client_id=1 if WHATSAPP_PHONE_ID matches and there's only
-    one client in the DB — makes migration from single-tenant painless.
+    one client in the DB â makes migration from single-tenant painless.
     """
     if phone_number_id:
         client = db.get_client_by_phone_id(phone_number_id)
