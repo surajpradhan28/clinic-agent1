@@ -246,6 +246,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── HTTPS redirect middleware ─────────────────────────────────────────────────
+@app.middleware("http")
+async def https_redirect(request: Request, call_next):
+    """Redirect all HTTP requests to HTTPS in production."""
+    if request.headers.get("x-forwarded-proto") == "http":
+        url = request.url.replace(scheme="https")
+        return JSONResponse(
+            status_code=301,
+            headers={"Location": str(url)},
+            content={}
+        )
+    return await call_next(request)
+
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
