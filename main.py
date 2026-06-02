@@ -262,6 +262,10 @@ async def https_redirect(request: Request, call_next):
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
+@app.get("/version")
+async def version_check():
+    return {"version": "v_debug_2026", "invoice_fix": "sent_at_or_fix"}
+
 @app.get("/")
 async def landing_page():
     """Public marketing landing page served at the root URL."""
