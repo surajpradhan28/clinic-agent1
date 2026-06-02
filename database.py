@@ -1344,7 +1344,7 @@ def get_invoice_by_token(token: str) -> dict | None:
     db_c = get_db()
     result = (
         db_c.table("invoices")
-        .select("*, clients(name, doctor_name, contact_phone, contact_email)")
+        .select("*, clients(name, doctor_name, contact_phone, email)")
         .eq("invoice_token", token)
         .limit(1)
         .execute()
