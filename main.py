@@ -1329,7 +1329,7 @@ async def invoice_view(token: str):
 
     period_label = f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}"
     due_str      = _fmt(invoice["due_date"])
-    issued_str   = _fmt(invoice.get("sent_at", invoice["created_at"])[:10])
+    issued_str   = _fmt((invoice.get("sent_at") or invoice["created_at"])[:10])
     amount_str   = f"₹{float(invoice['amount']):,.2f}"
     status       = invoice["status"].upper()
     status_color = {
