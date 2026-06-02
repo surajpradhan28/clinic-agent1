@@ -1303,7 +1303,11 @@ async def invoice_view(token: str):
     URL format: /invoice/<invoice_token>
     Renders a print-ready HTML invoice with payment instructions.
     """
-    invoice = db.get_invoice_by_token(token)
+    try:
+        invoice = db.get_invoice_by_token(token)
+    except Exception as exc:
+        import traceback
+        return HTMLResponse(f"<pre>DB ERROR: {exc}\n{traceback.format_exc()}</pre>", status_code=500)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
