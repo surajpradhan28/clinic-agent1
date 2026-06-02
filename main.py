@@ -1310,7 +1310,7 @@ async def invoice_view(token: str):
     # Pull client info — enriched by get_invoice_by_token with _clinic_name etc.
     clinic_name   = invoice.get("_clinic_name")  or (invoice.get("clients") or {}).get("name", "Clinic")
     contact_name  = invoice.get("_doctor_name")  or (invoice.get("clients") or {}).get("doctor_name", "")
-    contact_email = (invoice.get("clients") or {}).get("contact_email", "")
+    contact_email = (invoice.get("clients") or {}).get("email", "")
 
     plan_label = invoice["plan"].title()
     plan_desc  = {
