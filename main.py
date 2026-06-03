@@ -816,6 +816,46 @@ async def admin_action(request: Request):
             logger.info("[Admin Action] New client created: id=%s name=%s", new["id"], body.get("name"))
             return JSONResponse({"ok": True, "client_id": new["id"]})
 
+        elif action == "razorpay_link":
+            # Generate / regenerate a Razorpay payment link for an existing invoice
+            invoice_token = body.get("invoice_token", "")
+            if not invoice_token:
+                return JSONResponse({"ok": False, "error": "invoice_token required"}, status_code=400)
+            invoice = db.get_invoice_by_token(invoice_token)
+            if not invoice:
+                return JSONResponse({"ok": False, "error": "Invoice not found"}, status_code=404)
+            client_row = db.get_client_by_id(invoice["client_id"]) or {}
+            # Debug: surface key/package status
+            key_id = settings.RAZORPAY_KEY_ID
+            key_secret = settings.RAZORPAY_KEY_SECRET
+            try:
+                import razorpay as _rzp_mod
+                rzp_installed = True
+            except ImportError:
+                rzp_installed = False
+            if not key_id or not key_secret:
+                return JSONResponse({"ok": False, "error": f"Razorpay keys missing (key_id={'set' if key_id else 'empty'}, secret={'set' if key_secret else 'empty'})"}, status_code=500)
+            if not rzp_installed:
+                return JSONResponse({"ok": False, "error": "razorpay package not installed"}, status_code=500)
+            # Try creating the link and surface any exception
+            try:
+                rz = _rzp_mod.Client(auth=(key_id, key_secret))
+                amount_paise = int(float(invoice["amount"]) * 100)
+                link = rz.payment_link.create({
+                    "amount": amount_paise, "currency": "INR",
+                    "description": f"Clinic AI Agent — {invoice.get('plan','').title()} Plan",
+                    "reference_id": invoice["invoice_token"],
+                    "notify": {"sms": False, "email": False},
+                    "reminder_enable": False,
+                })
+                link_id  = link.get("id", "")
+                link_url = link.get("short_url", "")
+                if link_id:
+                    db.update_invoice_payment_link(invoice["id"], link_id, link_url)
+                return JSONResponse({"ok": True, "url": link_url, "id": link_id})
+            except Exception as rzp_exc:
+                return JSONResponse({"ok": False, "error": f"Razorpay API error: {rzp_exc}"}, status_code=500)
+
         else:
             return JSONResponse({"ok": False, "error": f"Unknown action: {action}"}, status_code=400)
 
@@ -1303,14 +1343,18 @@ async def invoice_view(token: str):
     URL format: /invoice/<invoice_token>
     Renders a print-ready HTML invoice with payment instructions.
     """
-    invoice = db.get_invoice_by_token(token)
+    try:
+        invoice = db.get_invoice_by_token(token)
+    except Exception as exc:
+        import traceback
+        return HTMLResponse(f"<pre>DB ERROR: {exc}\n{traceback.format_exc()}</pre>", status_code=500)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Pull client info — enriched by get_invoice_by_token with _clinic_name etc.
     clinic_name   = invoice.get("_clinic_name")  or (invoice.get("clients") or {}).get("name", "Clinic")
     contact_name  = invoice.get("_doctor_name")  or (invoice.get("clients") or {}).get("doctor_name", "")
-    contact_email = (invoice.get("clients") or {}).get("contact_email", "")
+    contact_email = (invoice.get("clients") or {}).get("email", "")
 
     plan_label = invoice["plan"].title()
     plan_desc  = {
@@ -1327,10 +1371,18 @@ async def invoice_view(token: str):
         except Exception:
             return d
 
-    period_label = f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}"
+    def _fix_enc(s: str) -> str:
+        """Fix double-encoded UTF-8 chars: replace with safe HTML entities."""
+        s = s.replace('â¹', '&#8377;')   # rupee sign
+        s = s.replace('â', '&mdash;')   # em-dash
+        s = s.replace('â', '&ndash;')   # en-dash
+        s = s.replace('â¢', '&bull;')    # bullet
+        return s
+
+    period_label = _fix_enc(f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}")
     due_str      = _fmt(invoice["due_date"])
-    issued_str   = _fmt(invoice.get("sent_at", invoice["created_at"])[:10])
-    amount_str   = f"₹{float(invoice['amount']):,.2f}"
+    issued_str   = _fmt((invoice.get("sent_at") or invoice["created_at"])[:10])
+    amount_str   = _fix_enc(f"₹{float(invoice['amount']):,.2f}")
     status       = invoice["status"].upper()
     status_color = {
         "SENT":    "#1565C0",
@@ -1349,7 +1401,7 @@ async def invoice_view(token: str):
         paid_banner = f"""
         <div style="background:#E8F5E9;border:2px solid #4CAF50;border-radius:8px;
                     padding:12px 20px;margin-bottom:24px;text-align:center;">
-          <span style="color:#2E7D32;font-size:18px;font-weight:bold;">✅ PAID{(' — ' + paid_at) if paid_at else ''}</span>
+          <span style="color:#2E7D32;font-size:18px;font-weight:bold;">&#10003; PAID{(' &mdash; ' + paid_at) if paid_at else ''}</span>
         </div>"""
 
     # Build payment section (pre-computed to avoid nested f-string issues)
@@ -1516,7 +1568,7 @@ async def invoice_view(token: str):
         <tbody>
           <tr>
             <td>
-              <strong>Clinic AI Agent — {plan_label} Plan</strong><br>
+              <strong>Clinic AI Agent &mdash; {plan_label} Plan</strong><br>
               <span style="color:#666;font-size:13px;">{plan_desc}</span>
             </td>
             <td style="color:#555;font-size:13px;">{period_label}</td>
@@ -1530,7 +1582,7 @@ async def invoice_view(token: str):
       </table>
 
       <div class="payment-box">
-        <h3>💳 Payment</h3>
+        <h3>&#128179; Payment</h3>
         {payment_section}
       </div>
 
@@ -1538,19 +1590,23 @@ async def invoice_view(token: str):
         <button onclick="window.print()" style="
           background:#1A3A5C;color:#fff;border:none;padding:10px 28px;
           border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;
-        ">🖨️ Print / Save as PDF</button>
+        ">&#128424; Print / Save as PDF</button>
       </p>
 
       <div class="footer-note">
         This is a computer-generated invoice. For queries, contact {settings.INVOICE_BUSINESS_NAME}.<br>
-        Thank you for your continued trust. 🙏
+        Thank you for your continued trust.
       </div>
     </div>
   </div>
 </body>
 </html>"""
 
-    return HTMLResponse(content=html)
+    try:
+        return HTMLResponse(content=html, media_type="text/html; charset=utf-8")
+    except Exception as exc:
+        import traceback
+        return HTMLResponse(f"<pre>RENDER ERROR: {exc}\n{traceback.format_exc()}</pre>", status_code=500)
 
 
 @app.get("/calendar/connect/{dashboard_key}")
