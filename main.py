@@ -1625,9 +1625,30 @@ async def whatsapp_banner(dashboard_key: str):
 
     clinic_name  = client.get("name") or "My Clinic"
     doctor_name  = client.get("doctor_name") or ""
-    phone        = (client.get("contact_phone") or "").lstrip("+")
-    wa_link      = f"https://wa.me/{phone}?text=Hi%2C+I+want+to+book+an+appointment"
     dr_line      = f"<div class='doctor-name'>Dr. {doctor_name}</div>" if doctor_name else ""
+
+    # Get the actual WhatsApp bot phone number from Meta API using the phone_number_id
+    wa_phone_id  = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+    wa_token     = client.get("whatsapp_token") or settings.WHATSAPP_TOKEN
+    bot_phone    = ""
+    try:
+        import httpx as _httpx
+        _resp = _httpx.get(
+            f"https://graph.facebook.com/v18.0/{wa_phone_id}",
+            params={"fields": "display_phone_number", "access_token": wa_token},
+            timeout=5,
+        )
+        bot_phone = _resp.json().get("display_phone_number", "")
+    except Exception:
+        pass
+
+    # Fallback to contact_phone if Meta lookup fails
+    if not bot_phone:
+        bot_phone = "+" + (client.get("contact_phone") or "").lstrip("+")
+
+    # Build wa.me link using digits only
+    phone_digits = "".join(c for c in str(bot_phone) if c.isdigit())
+    wa_link = f"https://wa.me/{phone_digits}?text=Hi%2C+I+want+to+book+an+appointment"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
