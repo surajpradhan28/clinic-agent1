@@ -1613,74 +1613,129 @@ async def invoice_view(token: str):
 
 @app.get("/banner/{dashboard_key}")
 async def whatsapp_banner(dashboard_key: str):
+    """
+    Generate a printable WhatsApp QR code banner for the clinic.
+    Patients scan the QR to start a WhatsApp chat and book appointments.
+    URL: /banner/<dashboard_key>
+    Returns a beautiful HTML page with QR code + download as PNG button.
+    """
     client = db.get_client_by_dashboard_key(dashboard_key)
     if not client:
         raise HTTPException(status_code=404, detail="Clinic not found")
-    clinic_name = client.get("name") or "My Clinic"
-    doctor_name = client.get("doctor_name") or ""
-    phone = (client.get("contact_phone") or "").lstrip("+")
-    wa_link = f"https://wa.me/{phone}?text=Hi%2C+I+want+to+book+an+appointment"
-    dr_line = f"<div class='doctor-name'>Dr. {doctor_name}</div>" if doctor_name else ""
+
+    clinic_name  = client.get("name") or "My Clinic"
+    doctor_name  = client.get("doctor_name") or ""
+    phone        = (client.get("contact_phone") or "").lstrip("+")
+    wa_link      = f"https://wa.me/{phone}?text=Hi%2C+I+want+to+book+an+appointment"
+    dr_line      = f"<div class='doctor-name'>Dr. {doctor_name}</div>" if doctor_name else ""
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Banner</title>
+  <title>WhatsApp Banner &mdash; {clinic_name}</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
-    *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{background:#f0f4f8;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;padding:20px}}
-    .btn{{background:#1A3A5C;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600;margin:4px}}
-    .btn:hover{{background:#25D366}}
-    .controls{{margin-bottom:20px}}
-    .banner{{width:1080px;height:1080px;background:linear-gradient(145deg,#0a1628 0%,#1a3a5c 40%,#0d7a3e 100%);border-radius:24px;overflow:hidden;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(0,0,0,0.3)}}
-    .bg-circles{{position:absolute;width:100%;height:100%;overflow:hidden}}
-    .circle{{position:absolute;border-radius:50%;background:rgba(255,255,255,0.04)}}
-    .c1{{width:600px;height:600px;top:-200px;right:-150px}}
-    .c2{{width:400px;height:400px;bottom:-100px;left:-100px}}
-    .content{{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:60px}}
-    .tagline{{color:#25D366;font-size:20px;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px}}
-    .clinic-name{{color:#fff;font-size:54px;font-weight:900;line-height:1.1;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,0.4)}}
-    .doctor-name{{color:#a8d8ff;font-size:26px;font-weight:400;margin-bottom:36px}}
-    .qr-wrapper{{background:#fff;border-radius:20px;padding:20px;box-shadow:0 8px 40px rgba(0,0,0,0.4);margin-bottom:32px}}
-    .scan-text{{color:#fff;font-size:30px;font-weight:800;margin-bottom:8px}}
-    .sub-text{{color:#b8d4f0;font-size:18px;margin-bottom:28px}}
-    .steps{{display:flex;gap:32px;margin-bottom:20px}}
-    .step{{display:flex;flex-direction:column;align-items:center;gap:8px}}
-    .step-num{{width:36px;height:36px;border-radius:50%;background:#25D366;color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center}}
-    .step-text{{color:#c8ddf0;font-size:14px}}
-    .footer-txt{{color:rgba(255,255,255,0.4);font-size:13px;position:absolute;bottom:24px}}
-    @media print{{.controls{{display:none}}body{{background:white;padding:0}}}}
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{ background: #f0f4f8; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }}
+    .controls {{ margin-bottom: 20px; display: flex; gap: 12px; }}
+    .btn {{ background: #1A3A5C; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; }}
+    .btn:hover {{ background: #2E75B6; }}
+    .banner {{
+      width: 1080px; height: 1080px;
+      background: linear-gradient(145deg, #0a1628 0%, #1a3a5c 40%, #0d7a3e 100%);
+      border-radius: 24px; overflow: hidden; position: relative;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }}
+    .bg-circles {{ position: absolute; width: 100%; height: 100%; overflow: hidden; }}
+    .circle {{ position: absolute; border-radius: 50%; background: rgba(255,255,255,0.04); }}
+    .c1 {{ width: 600px; height: 600px; top: -200px; right: -150px; }}
+    .c2 {{ width: 400px; height: 400px; bottom: -100px; left: -100px; }}
+    .c3 {{ width: 200px; height: 200px; top: 50%; left: 10%; }}
+    .content {{ position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 60px; }}
+    .wa-icon {{ width: 80px; height: 80px; margin-bottom: 20px; }}
+    .tagline {{ color: #25D366; font-size: 22px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 12px; }}
+    .clinic-name {{ color: #ffffff; font-size: 56px; font-weight: 900; line-height: 1.1; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.4); }}
+    .doctor-name {{ color: #a8d8ff; font-size: 26px; font-weight: 400; margin-bottom: 40px; }}
+    .qr-wrapper {{
+      background: #ffffff; border-radius: 20px; padding: 20px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      margin-bottom: 36px;
+    }}
+    .scan-text {{ color: #ffffff; font-size: 32px; font-weight: 800; margin-bottom: 8px; letter-spacing: 1px; }}
+    .sub-text {{ color: #b8d4f0; font-size: 18px; font-weight: 400; margin-bottom: 30px; }}
+    .divider {{ width: 80px; height: 3px; background: #25D366; border-radius: 2px; margin: 0 auto 24px; }}
+    .steps {{ display: flex; gap: 32px; margin-bottom: 32px; }}
+    .step {{ display: flex; flex-direction: column; align-items: center; gap: 8px; }}
+    .step-num {{ width: 36px; height: 36px; border-radius: 50%; background: #25D366; color: #fff; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; }}
+    .step-text {{ color: #c8ddf0; font-size: 14px; }}
+    .footer {{ color: rgba(255,255,255,0.4); font-size: 13px; position: absolute; bottom: 24px; }}
   </style>
 </head>
 <body>
-  <div class="controls">
-    <button class="btn" onclick="dl()">&#11015; Download PNG</button>
-    <button class="btn" onclick="window.print()">Print</button>
+  <div class="controls no-print">
+    <button class="btn" onclick="downloadBanner()">&#11015; Download PNG</button>
+    <button class="btn" onclick="window.print()">&#128424; Print Banner</button>
   </div>
+
   <div class="banner" id="banner">
-    <div class="bg-circles"><div class="circle c1"></div><div class="circle c2"></div></div>
+    <div class="bg-circles">
+      <div class="circle c1"></div>
+      <div class="circle c2"></div>
+      <div class="circle c3"></div>
+    </div>
     <div class="content">
+      <svg class="wa-icon" viewBox="0 0 24 24" fill="#25D366">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.852L0 24l6.336-1.502A11.96 11.96 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.015-1.377l-.36-.214-3.732.885.936-3.619-.235-.372A9.818 9.818 0 1112 21.818z"/>
+      </svg>
       <div class="tagline">WhatsApp Appointment Booking</div>
       <div class="clinic-name">{clinic_name}</div>
       {dr_line}
-      <div class="qr-wrapper"><div id="qr"></div></div>
+      <div class="qr-wrapper">
+        <div id="qrcode"></div>
+      </div>
       <div class="scan-text">Scan &amp; Book Your Appointment</div>
       <div class="sub-text">Open WhatsApp camera &rarr; Point at QR &rarr; Tap the link</div>
+      <div class="divider"></div>
       <div class="steps">
         <div class="step"><div class="step-num">1</div><div class="step-text">Scan QR</div></div>
         <div class="step"><div class="step-num">2</div><div class="step-text">Open Chat</div></div>
         <div class="step"><div class="step-num">3</div><div class="step-text">Book Slot</div></div>
       </div>
-      <div class="footer-txt">Available 24/7 &bull; Instant Confirmation &bull; Free to Use</div>
+      <div class="footer">Available 24/7 &bull; Instant Confirmation &bull; Free Service</div>
     </div>
   </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
-    new QRCode(document.getElementById("qr"),{{text:"{wa_link}",width:260,height:260,colorDark:"#0a1628",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H}});
-    function dl(){{html2canvas(document.getElementById("banner"),{{scale:2,useCORS:true}}).then(c=>{{const a=document.createElement("a");a.download="{clinic_name}_Banner.png";a.href=c.toDataURL("image/png");a.click()}})}}
+    // Generate QR code
+    new QRCode(document.getElementById("qrcode"), {{
+      text: "{wa_link}",
+      width: 260, height: 260,
+      colorDark: "#0a1628", colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    }});
+
+    function downloadBanner() {{
+      html2canvas(document.getElementById('banner'), {{
+        scale: 2, useCORS: true, backgroundColor: null
+      }}).then(canvas => {{
+        const link = document.createElement('a');
+        link.download = '{clinic_name.replace(" ", "_")}_WhatsApp_Banner.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }});
+    }}
   </script>
+  <style>
+    @media print {{
+      .controls {{ display: none; }}
+      body {{ background: white; padding: 0; }}
+    }}
+  </style>
 </body>
 </html>"""
     return HTMLResponse(content=html, media_type="text/html; charset=utf-8")
