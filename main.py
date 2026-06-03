@@ -844,7 +844,7 @@ async def admin_action(request: Request):
                 amount_paise = int(float(invoice["amount"]) * 100)
                 link = rz.payment_link.create({
                     "amount": amount_paise, "currency": "INR",
-                    "description": f"Clinic AI Agent â {invoice.get('plan','').title()} Plan",
+                    "description": f"Clinic AI Agent &mdash; {invoice.get('plan','').title()} Plan",
                     "reference_id": invoice["invoice_token"],
                     "notify": {"sms": False, "email": False},
                     "reminder_enable": False,
