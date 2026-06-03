@@ -1611,6 +1611,81 @@ async def invoice_view(token: str):
         return HTMLResponse(f"<pre>RENDER ERROR: {exc}\n{traceback.format_exc()}</pre>", status_code=500)
 
 
+@app.get("/banner/{dashboard_key}")
+async def whatsapp_banner(dashboard_key: str):
+    client = db.get_client_by_dashboard_key(dashboard_key)
+    if not client:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+    clinic_name = client.get("name") or "My Clinic"
+    doctor_name = client.get("doctor_name") or ""
+    phone = (client.get("contact_phone") or "").lstrip("+")
+    wa_link = f"https://wa.me/{phone}?text=Hi%2C+I+want+to+book+an+appointment"
+    dr_line = f"<div class='doctor-name'>Dr. {doctor_name}</div>" if doctor_name else ""
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Banner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *{{margin:0;padding:0;box-sizing:border-box}}
+    body{{background:#f0f4f8;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;padding:20px}}
+    .btn{{background:#1A3A5C;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600;margin:4px}}
+    .btn:hover{{background:#25D366}}
+    .controls{{margin-bottom:20px}}
+    .banner{{width:1080px;height:1080px;background:linear-gradient(145deg,#0a1628 0%,#1a3a5c 40%,#0d7a3e 100%);border-radius:24px;overflow:hidden;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(0,0,0,0.3)}}
+    .bg-circles{{position:absolute;width:100%;height:100%;overflow:hidden}}
+    .circle{{position:absolute;border-radius:50%;background:rgba(255,255,255,0.04)}}
+    .c1{{width:600px;height:600px;top:-200px;right:-150px}}
+    .c2{{width:400px;height:400px;bottom:-100px;left:-100px}}
+    .content{{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:60px}}
+    .tagline{{color:#25D366;font-size:20px;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px}}
+    .clinic-name{{color:#fff;font-size:54px;font-weight:900;line-height:1.1;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,0.4)}}
+    .doctor-name{{color:#a8d8ff;font-size:26px;font-weight:400;margin-bottom:36px}}
+    .qr-wrapper{{background:#fff;border-radius:20px;padding:20px;box-shadow:0 8px 40px rgba(0,0,0,0.4);margin-bottom:32px}}
+    .scan-text{{color:#fff;font-size:30px;font-weight:800;margin-bottom:8px}}
+    .sub-text{{color:#b8d4f0;font-size:18px;margin-bottom:28px}}
+    .steps{{display:flex;gap:32px;margin-bottom:20px}}
+    .step{{display:flex;flex-direction:column;align-items:center;gap:8px}}
+    .step-num{{width:36px;height:36px;border-radius:50%;background:#25D366;color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center}}
+    .step-text{{color:#c8ddf0;font-size:14px}}
+    .footer-txt{{color:rgba(255,255,255,0.4);font-size:13px;position:absolute;bottom:24px}}
+    @media print{{.controls{{display:none}}body{{background:white;padding:0}}}}
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="btn" onclick="dl()">&#11015; Download PNG</button>
+    <button class="btn" onclick="window.print()">Print</button>
+  </div>
+  <div class="banner" id="banner">
+    <div class="bg-circles"><div class="circle c1"></div><div class="circle c2"></div></div>
+    <div class="content">
+      <div class="tagline">WhatsApp Appointment Booking</div>
+      <div class="clinic-name">{clinic_name}</div>
+      {dr_line}
+      <div class="qr-wrapper"><div id="qr"></div></div>
+      <div class="scan-text">Scan &amp; Book Your Appointment</div>
+      <div class="sub-text">Open WhatsApp camera &rarr; Point at QR &rarr; Tap the link</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-text">Scan QR</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">Open Chat</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">Book Slot</div></div>
+      </div>
+      <div class="footer-txt">Available 24/7 &bull; Instant Confirmation &bull; Free to Use</div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    new QRCode(document.getElementById("qr"),{{text:"{wa_link}",width:260,height:260,colorDark:"#0a1628",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.H}});
+    function dl(){{html2canvas(document.getElementById("banner"),{{scale:2,useCORS:true}}).then(c=>{{const a=document.createElement("a");a.download="{clinic_name}_Banner.png";a.href=c.toDataURL("image/png");a.click()}})}}
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html, media_type="text/html; charset=utf-8")
+
+
 @app.get("/calendar/connect/{dashboard_key}")
 async def calendar_connect(dashboard_key: str):
     """
