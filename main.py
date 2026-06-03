@@ -1375,12 +1375,10 @@ async def invoice_view(token: str):
         except Exception:
             return d
 
-    def _fix_enc(s: str) -> str:
-        """Fix double-encoded UTF-8 chars: replace with safe HTML entities."""
-        s = s.replace('₹', '&#8377;')   # rupee sign
-        s = s.replace('—', '&mdash;')   # em-dash
-        s = s.replace('–', '&ndash;')   # en-dash
-        s = s.replace('•', '&bull;')    # bullet
+    def _fix_enc(s):
+        s = s.replace('\u00e2\u0082\u00b9', '&#8377;')
+        s = s.replace('\u00e2\u0080\u0094', '&mdash;')
+        s = s.replace('\u00e2\u0080\u0093', '&ndash;')
         return s
 
     period_label = _fix_enc(f"{_fmt(invoice['period_start'])} – {_fmt(invoice['period_end'])}")
