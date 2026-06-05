@@ -1682,8 +1682,25 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
         return await _get_doctor_reply(phone, user_text, client)
 
     history = db.get_conversation_history(client_id, phone, limit=8)
+
+    # ── Start-of-turn intake check ────────────────────────────────────────────
+    # If this patient has a recent appointment without intake collected yet,
+    # inject a hard reminder so the AI never silently skips collection.
+    pending_intake_appt = db.get_pending_intake_appointment(client_id, phone)
+    intake_reminder = ""
+    if pending_intake_appt:
+        pname = pending_intake_appt.get("patient_name", "the patient")
+        appt_id = pending_intake_appt.get("id")
+        intake_reminder = (
+            f"\n\n🔴 INTAKE PENDING — appointment ID {appt_id} for {pname} "
+            f"has no intake on file. Before anything else, ask for: "
+            f"(1) age, (2) gender, (3) chief complaint — ONE at a time. "
+            f"Once all three are collected, call save_patient_intake with appointment_id={appt_id}. "
+            f"Do not skip this even if the patient tries to change the subject."
+        )
+
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _build_system_prompt(client)},
+        {"role": "system", "content": _build_system_prompt(client) + intake_reminder},
         *history,
         {"role": "user", "content": user_text},
     ]
@@ -1692,7 +1709,7 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
     response = await _openai.chat.completions.create(
         model=settings.OPENAI_MODEL, messages=messages,
         tools=active_tools, tool_choice="auto",
-        max_tokens=500, temperature=0.7,
+        max_tokens=600, temperature=0.7,
     )
 
     choice   = response.choices[0]
@@ -1714,11 +1731,39 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
                 appt_row = maybe_appt
             tool_results.append({"role": "tool", "tool_call_id": tc.id, "content": fn_result})
 
+            # ── Inline intake injection ───────────────────────────────────────
+            # When create_appointment just returned is_new_patient=True,
+            # immediately inject a mandatory intake instruction so the AI
+            # asks the question in THIS reply rather than potentially missing it.
+            if fn_name == "create_appointment":
+                try:
+                    result_data = json.loads(fn_result)
+                    if result_data.get("success") and result_data.get("is_new_patient"):
+                        new_appt_id = result_data.get("appointment_id")
+                        new_name    = result_data.get("patient_name", "the patient")
+                        info        = _get_clinic_info(client_id)
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                f"⚡ MANDATORY INTAKE — {new_name} is visiting {info['clinic_name']} "
+                                f"for the FIRST TIME (appointment ID {new_appt_id}). "
+                                f"After your booking confirmation message, you MUST ask: "
+                                f"'Since this is your first visit, may I note a few quick details for "
+                                f"Dr. {info['doctor_name']}? 😊' "
+                                f"Then ask ONE question at a time: age → gender → chief complaint. "
+                                f"After collecting all three, call save_patient_intake with "
+                                f"appointment_id={new_appt_id}. "
+                                f"Do NOT skip this step."
+                            ),
+                        })
+                except Exception:
+                    pass
+
         messages.extend(tool_results)
         response = await _openai.chat.completions.create(
             model=settings.OPENAI_MODEL, messages=messages,
             tools=active_tools, tool_choice="auto",
-            max_tokens=500, temperature=0.7,
+            max_tokens=600, temperature=0.7,
         )
         choice = response.choices[0]
 

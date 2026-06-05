@@ -482,7 +482,7 @@ def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
     db = get_db()
     result = (
         db.table("appointments")
-        .select("id, patient_name, patient_phone, slot_time, visit_notes")
+        .select("id, patient_name, patient_phone, slot_time")
         .eq("client_id", client_id)
         .eq("appointment_date", date)
         .eq("status", "confirmed")
@@ -1652,13 +1652,15 @@ def save_visit_notes(
     - Writes visit_notes + followup_days to the appointments row.
     - Recalculates the pending followup scheduled_at to appointment_date + followup_days.
     Returns the updated appointment row.
+
+    Raises RuntimeError if schema_v16 has not been applied yet.
     """
     db_c = get_db()
 
     # Fetch the appointment to get date/slot
     appt_res = (
         db_c.table("appointments")
-        .select("id, client_id, appointment_date, slot_time, visit_notes")
+        .select("id, client_id, appointment_date, slot_time")
         .eq("id", appt_id)
         .eq("client_id", client_id)
         .limit(1)
@@ -1750,22 +1752,53 @@ def get_patient_history_all(client_id: int, limit: int = 200) -> list[dict]:
     Includes visits with and without notes.
     Ordered by patient_name then appointment_date descending so rows
     can be grouped by patient on the frontend.
+
+    Gracefully falls back to a query without new columns if schema_v16
+    has not been applied yet (visit_notes / followup_days don't exist).
     """
     db_c = get_db()
-    result = (
-        db_c.table("appointments")
-        .select(
+
+    def _query(cols: str) -> list[dict]:
+        result = (
+            db_c.table("appointments")
+            .select(cols)
+            .eq("client_id", client_id)
+            .in_("status", ["confirmed", "completed", "cancelled"])
+            .order("patient_name", desc=False)
+            .order("appointment_date", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+
+    try:
+        rows = _query(
             "id, patient_name, patient_phone, appointment_date, slot_time, "
             "status, visit_notes, followup_days, created_at"
         )
-        .eq("client_id", client_id)
-        .in_("status", ["confirmed", "completed", "cancelled"])
-        .order("patient_name", desc=False)
-        .order("appointment_date", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return result.data or []
+        # Supabase returns rows even if columns don't exist — verify the first row
+        # has the expected keys; if not, fall back to base columns
+        if rows and "visit_notes" not in rows[0]:
+            raise KeyError("visit_notes missing — schema_v16 not applied")
+        return rows
+    except Exception as exc:
+        logger.warning(
+            "get_patient_history_all: falling back to base columns "
+            "(run schema_v16_visit_notes.sql to enable notes). Error: %s", exc
+        )
+        try:
+            rows = _query(
+                "id, patient_name, patient_phone, appointment_date, "
+                "slot_time, status, created_at"
+            )
+            # Fill missing fields with defaults so dashboard renders cleanly
+            for r in rows:
+                r.setdefault("visit_notes", None)
+                r.setdefault("followup_days", 2)
+            return rows
+        except Exception as exc2:
+            logger.error("get_patient_history_all fallback also failed: %s", exc2)
+            return []
 
 
 def search_patient_by_name(client_id: int, name_query: str) -> list[dict]:
@@ -1803,6 +1836,49 @@ def get_recent_appointments_for_patient(
         .execute()
     )
     return result.data or []
+
+
+def get_pending_intake_appointment(client_id: int, phone: str) -> dict | None:
+    """
+    Return the most recent confirmed appointment for this patient that:
+      - has no intake record yet (patient_intake table has nothing for this appt)
+      - was booked within the last 7 days (so we don't nag indefinitely)
+
+    Used to inject an intake-reminder at the start of every patient turn until
+    intake is collected, ensuring the AI never silently skips it.
+    """
+    db_c = get_db()
+    from datetime import date as _date, timedelta
+    since = (_date.today() - timedelta(days=7)).isoformat()
+
+    # Recent confirmed appointments for this patient
+    appts = (
+        db_c.table("appointments")
+        .select("id, patient_name, appointment_date, slot_time")
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .eq("status", "confirmed")
+        .gte("appointment_date", since)
+        .order("appointment_date", desc=True)
+        .limit(5)
+        .execute()
+    ).data or []
+
+    for appt in appts:
+        # Check whether intake has already been collected for this appointment
+        existing = (
+            db_c.table("patient_intake")
+            .select("id")
+            .eq("client_id", client_id)
+            .eq("patient_phone", phone)
+            .eq("appointment_id", appt["id"])
+            .limit(1)
+            .execute()
+        ).data
+        if not existing:
+            return appt  # Found one with no intake — needs collection
+
+    return None  # All recent appointments already have intake
 
 
 def get_appointments_without_notes(client_id: int, date: str) -> list[dict]:

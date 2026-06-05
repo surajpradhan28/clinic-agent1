@@ -87,7 +87,11 @@ def render_clinic_dashboard(client: dict) -> str:
     week_appts      = db.get_appointments_range(client_id, today_str, week_end)
     recent_activity = db.get_recent_activity(client_id, limit=15)
     subscription    = db.get_active_subscription(client_id)
-    visit_notes_history = db.get_patient_history_all(client_id, limit=50)
+    try:
+        visit_notes_history = db.get_patient_history_all(client_id, limit=200)
+    except Exception as _e:
+        logger.warning("Dashboard: could not load patient history: %s", _e)
+        visit_notes_history = []
 
     # ── Sub-render helpers ────────────────────────────────────────────────────
 
