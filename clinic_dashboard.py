@@ -93,6 +93,24 @@ def render_clinic_dashboard(client: dict) -> str:
         logger.warning("Dashboard: could not load patient history: %s", _e)
         visit_notes_history = []
 
+    try:
+        referral_stats = db.get_referral_stats(client_id)
+    except Exception as _e:
+        logger.warning("Dashboard: could not load referral stats: %s", _e)
+        referral_stats = {}
+
+    from config import settings as _settings
+    referral_code  = referral_stats.get("referral_code") or "—"
+    referral_link  = (
+        f"{_settings.SERVER_URL}/signup?ref={referral_code}"
+        if referral_code != "—" else ""
+    )
+    ref_signups       = referral_stats.get("total_signups", 0)
+    ref_paid          = referral_stats.get("total_paid", 0)
+    ref_pending_mo    = referral_stats.get("pending_months", 0)
+    ref_applied_mo    = referral_stats.get("applied_months", 0)
+    ref_total_earned  = ref_pending_mo + ref_applied_mo
+
     # ── Sub-render helpers ────────────────────────────────────────────────────
 
     def _stat_card(value, label, icon, color):
@@ -480,6 +498,48 @@ def render_clinic_dashboard(client: dict) -> str:
         </thead>
         <tbody id="historyTbody">{_patient_history_rows()}</tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Referral stats -->
+  <div class="card">
+    <div class="card-header">🤝 Refer &amp; Earn — Free Months</div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0">
+
+        <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+          <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Your Referral Code</div>
+          <div style="font-size:22px;font-weight:700;color:#128c7e;letter-spacing:2px">{_esc(referral_code)}</div>
+        </div>
+
+        <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+          <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Doctors Referred</div>
+          <div style="font-size:28px;font-weight:700;color:#1f2937">{ref_signups}</div>
+          <div style="font-size:12px;color:#6b7280">{ref_paid} paid → rewards triggered</div>
+        </div>
+
+        <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+          <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Free Months Earned</div>
+          <div style="font-size:28px;font-weight:700;color:#1f2937">{ref_total_earned}</div>
+          <div style="font-size:12px;color:#6b7280">{ref_applied_mo} applied · {ref_pending_mo} pending</div>
+        </div>
+
+        <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6;grid-column:1/-1">
+          <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:6px">Your Referral Link</div>
+          {"" if not referral_link else f'''
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <code style="background:#f3f4f6;padding:6px 12px;border-radius:8px;font-size:13px;color:#1f2937;word-break:break-all">{_esc(referral_link)}</code>
+            <button onclick="navigator.clipboard.writeText('{_esc(referral_link)}');this.textContent='✅ Copied!';setTimeout(()=>this.textContent='📋 Copy',2000)"
+              style="background:#128c7e;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+              📋 Copy
+            </button>
+          </div>
+          '''}
+          {"" if referral_link else '<span style="color:#9ca3af;font-style:italic;font-size:13px">No referral code assigned yet — contact support to get yours.</span>'}
+          <div style="margin-top:8px;font-size:12px;color:#6b7280">Share this with doctor friends. You earn <strong>1 free month</strong> for every friend who subscribes.</div>
+        </div>
+
+      </div>
     </div>
   </div>
 
