@@ -406,6 +406,23 @@ h2{{font-size:clamp(22px,3vw,36px);font-weight:900;color:var(--navy);letter-spac
 .testi-avatar{{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--dark-green));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0}}
 .testi-name{{font-size:14px;font-weight:700;color:#fff}}
 .testi-role{{font-size:12px;color:rgba(255,255,255,0.5)}}
+.refer-bg{{background:#fff}}
+.refer-hero{{background:linear-gradient(135deg,rgba(37,211,102,0.06),rgba(18,140,126,0.06));border:1px solid rgba(37,211,102,0.2);border-radius:20px;padding:40px 32px;text-align:center;max-width:640px;margin:0 auto 56px}}
+.refer-big{{font-size:48px;font-weight:900;color:var(--green);line-height:1;margin-bottom:6px}}
+.refer-big-label{{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:4px}}
+.refer-big-sub{{font-size:13px;color:var(--muted)}}
+.refer-steps{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-top:48px}}
+.refer-step{{background:var(--light);border:1px solid var(--border);border-radius:14px;padding:24px 20px;text-align:center;position:relative}}
+.refer-step-num{{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--dark-green));color:#fff;font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}}
+.refer-step-icon{{font-size:28px;margin-bottom:12px}}
+.refer-step-title{{font-size:15px;font-weight:800;color:var(--navy);margin-bottom:6px}}
+.refer-step-desc{{font-size:13px;color:var(--muted);line-height:1.6}}
+.refer-arrow{{position:absolute;right:-14px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--border);z-index:1}}
+.refer-cta-box{{background:linear-gradient(135deg,var(--navy),var(--navy2));border-radius:16px;padding:32px 28px;text-align:center;margin-top:48px}}
+.refer-cta-title{{font-size:20px;font-weight:800;color:#fff;margin-bottom:8px}}
+.refer-cta-sub{{font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:20px}}
+.refer-cta-chips{{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:24px}}
+.refer-chip{{background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.25);color:#25D366;font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px}}
 .faq-bg{{background:var(--light)}}
 .faq-list{{max-width:720px;margin:48px auto 0;display:flex;flex-direction:column;gap:12px}}
 .faq-item{{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}}
@@ -453,6 +470,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <a href="#features">Features</a>
       <a href="#how">How It Works</a>
       <a href="#pricing">Pricing</a>
+      <a href="#referral" style="color:var(--dark-green);font-weight:700">🎁 Refer &amp; Earn</a>
       <a href="#faq">FAQ</a>
     </div>
     <a href="{wa_link}" target="_blank"><button class="btn-nav">💬 WhatsApp Us</button></a>
@@ -626,6 +644,62 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"Earlier my receptionist used to spend 2 hours daily just picking up calls for bookings. Now the bot handles everything. Patients actually prefer it —  they book at midnight when they remember!"</div><div class="testi-author"><div class="testi-avatar">RS</div><div><div class="testi-name">Dr. Rajesh Sharma</div><div class="testi-role">General Physician, Mumbai</div></div></div></div>
       <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"The 24-hour reminder feature alone is worth the price. My no-show rate dropped from 4–5 patients a day to maybe 1 per week. That is real money saved every month."</div><div class="testi-author"><div class="testi-avatar">PM</div><div><div class="testi-name">Dr. Priya Mehta</div><div class="testi-role">Gynaecologist, Pune</div></div></div></div>
       <div class="testi-card reveal"><div class="testi-stars">★★★★★</div><div class="testi-text">"I get my full day's schedule on WhatsApp every morning at 7 AM. I know exactly how many patients are coming before I even reach the clinic. Simple but very useful."</div><div class="testi-author"><div class="testi-avatar">AK</div><div><div class="testi-name">Dr. Arvind Kumar</div><div class="testi-role">Paediatrician, Bangalore</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="refer-bg" id="referral" style="padding:72px 24px">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-label" style="color:var(--dark-green)">Refer &amp; Earn</div>
+      <h2>Refer a Doctor Friend — Get Free Months</h2>
+      <p class="section-sub">Every doctor friend who subscribes using your link earns you 1 free month. No cap, no expiry — refer 12 doctors, get a full year free.</p>
+    </div>
+
+    <div class="refer-hero reveal">
+      <div class="refer-big">1 Free Month</div>
+      <div class="refer-big-label">for every doctor who signs up and pays using your link</div>
+      <div class="refer-big-sub">Unlimited referrals · Credits applied automatically · No paperwork</div>
+    </div>
+
+    <div class="refer-steps">
+      <div class="refer-step reveal">
+        <div class="refer-step-icon">🔗</div>
+        <div class="refer-step-title">Get Your Link</div>
+        <div class="refer-step-desc">Type <strong>"referral"</strong> on your clinic WhatsApp bot to get your personal referral link instantly.</div>
+        <div class="refer-arrow">→</div>
+      </div>
+      <div class="refer-step reveal">
+        <div class="refer-step-icon">📤</div>
+        <div class="refer-step-title">Share with Doctors</div>
+        <div class="refer-step-desc">Send your link to doctor friends, colleagues, or anyone who runs a clinic. Works on WhatsApp, email, anywhere.</div>
+        <div class="refer-arrow">→</div>
+      </div>
+      <div class="refer-step reveal">
+        <div class="refer-step-icon">💳</div>
+        <div class="refer-step-title">They Subscribe</div>
+        <div class="refer-step-desc">When your friend starts their paid plan through your link, the reward is triggered automatically.</div>
+        <div class="refer-arrow">→</div>
+      </div>
+      <div class="refer-step reveal">
+        <div class="refer-step-icon">🎁</div>
+        <div class="refer-step-title">You Get 1 Free Month</div>
+        <div class="refer-step-desc">1 free month is added to your next renewal automatically. Refer 3 doctors = 3 free months. No limit.</div>
+      </div>
+    </div>
+
+    <div class="refer-cta-box reveal">
+      <div class="refer-cta-title">How many months can you earn?</div>
+      <div class="refer-cta-sub">Most doctors in the same hospital or clinic group refer 3–5 colleagues. That is 3–5 months free.</div>
+      <div class="refer-cta-chips">
+        <span class="refer-chip">✅ No limit on referrals</span>
+        <span class="refer-chip">✅ Credits never expire</span>
+        <span class="refer-chip">✅ Applied automatically</span>
+        <span class="refer-chip">✅ Works on all plans</span>
+      </div>
+      <a href="https://wa.me/918108664169?text=Hi%2C+I+want+my+referral+code" class="btn-primary" style="display:inline-flex">
+        💬 Get My Referral Link on WhatsApp
+      </a>
     </div>
   </div>
 </section>
