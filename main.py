@@ -537,15 +537,21 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <p class="section-sub">All features work over WhatsApp —  no app, no website, no training required for patients.</p>
     </div>
     <div class="features-grid">
-      <div class="feat-card reveal"><div class="feat-icon">📅</div><div class="feat-title">Smart Appointment Booking</div><div class="feat-desc">Patients message your clinic WhatsApp and get available slots instantly. Bot confirms the appointment automatically —  no human needed.</div><div class="feat-tags"><span class="ftag">24/7 Active</span><span class="ftag">Instant Confirm</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">⏰</div><div class="feat-title">Automatic Reminders</div><div class="feat-desc">Bot sends a WhatsApp reminder 24 hours before every appointment. Patient confirms or cancels with one word. Drastically reduces no-shows.</div><div class="feat-tags"><span class="ftag">Auto-Sent</span><span class="ftag">Zero Effort</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">❌</div><div class="feat-title">Easy Cancellation</div><div class="feat-desc">Patients cancel in 3 messages without calling. Cancelled slot becomes available again instantly for another patient.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Instant</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📅</div><div class="feat-title">Smart Appointment Booking</div><div class="feat-desc">Patients message your clinic WhatsApp and get available slots instantly. Bot confirms the appointment automatically — no human needed.</div><div class="feat-tags"><span class="ftag">24/7 Active</span><span class="ftag">Instant Confirm</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">⏰</div><div class="feat-title">24h + 1h Automatic Reminders</div><div class="feat-desc">Bot sends reminders 24 hours before the appointment and again 1 hour before. Two chances to catch no-shows before they happen.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Auto-Sent</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📋</div><div class="feat-title">New Patient Intake Form</div><div class="feat-desc">First-time patients share their age, gender, and chief complaint during booking. Doctor gets a summary 30 minutes before they arrive — fully prepared.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">New Patient</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📝</div><div class="feat-title">Doctor Visit Notes</div><div class="feat-desc">After each appointment, doctor adds diagnosis and prescription from WhatsApp in one message. Stored permanently — no paper records needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Via WhatsApp</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📂</div><div class="feat-title">Full Patient History</div><div class="feat-desc">Doctor types "history of Rahul Sharma" and gets every past visit, date, and note instantly on WhatsApp. Full history also visible on the dashboard.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Instant</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">⏳</div><div class="feat-title">Auto Waitlist</div><div class="feat-desc">When a slot is full, patients can join a waitlist. The moment someone cancels, the next patient is automatically booked and notified — zero manual work.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Auto</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">❌</div><div class="feat-title">Easy Cancellation</div><div class="feat-desc">Patients cancel in 3 messages without calling. Cancelled slot is freed instantly — and if someone is on the waitlist, they get auto-booked.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Instant</span></div></div>
       <div class="feat-card reveal"><div class="feat-icon">🔄</div><div class="feat-title">One-Tap Reschedule</div><div class="feat-desc">Patient wants to change their appointment? They send one message, choose a new slot, done. No phone tag, no manual diary editing.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">Any Date</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🩺</div><div class="feat-title">Doctor WhatsApp Controls</div><div class="feat-desc">Doctor can block time slots, view today's list, and update clinic notes —  all from their own WhatsApp. No separate app to learn.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">Command-Based</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">🌅</div><div class="feat-title">Daily Morning Schedule</div><div class="feat-desc">Every morning at 7 AM, the doctor gets a complete WhatsApp summary of the day's appointments —  name, time, and new patient flags.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">7 AM Auto</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">💬</div><div class="feat-title">Post-Visit Follow-up</div><div class="feat-desc">7 days after a visit, the bot automatically checks in with the patient and requests a Google review. Build your clinic's reputation passively.</div><div class="feat-tags"><span class="ftag">Auto</span><span class="ftag">Review Boost</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📢</div><div class="feat-title">Broadcast to All Patients</div><div class="feat-desc">Send one WhatsApp to every registered patient at once — holiday notices, new timings, health tips, or any announcement. Done in seconds.</div><div class="feat-tags"><span class="ftag">Pro Plan</span><span class="ftag">All Patients</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🩺</div><div class="feat-title">Doctor WhatsApp Controls</div><div class="feat-desc">Doctor can block slots, view today's schedule, update clinic info, and manage everything from their own WhatsApp. No separate app needed.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">Command-Based</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🌅</div><div class="feat-title">Daily Morning Schedule</div><div class="feat-desc">Every morning at 7 AM, the doctor gets a complete WhatsApp summary of the day's appointments — name, time, and new patient flags.</div><div class="feat-tags"><span class="ftag">Suite Plan</span><span class="ftag">7 AM Auto</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">🌙</div><div class="feat-title">Nightly Notes Reminder</div><div class="feat-desc">Every night at 11 PM, doctor gets a WhatsApp listing patients from today who still have no visit notes — so nothing slips through the cracks.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">11 PM Auto</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">💬</div><div class="feat-title">Post-Visit Follow-up</div><div class="feat-desc">2 days after a visit (customisable per patient), the bot checks in with the patient and requests a Google review. Build your reputation passively.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Review Boost</span></div></div>
       <div class="feat-card reveal"><div class="feat-icon">🔒</div><div class="feat-title">No App Required</div><div class="feat-desc">Patients already have WhatsApp. No download, no login, no new platform. The clinic bot works in the same app patients use every day.</div><div class="feat-tags"><span class="ftag">Zero Friction</span><span class="ftag">All Phones</span></div></div>
-      <div class="feat-card reveal"><div class="feat-icon">📊</div><div class="feat-title">Admin Web Dashboard</div><div class="feat-desc">See all appointments, patient history, and usage stats in a clean web dashboard. Manage everything from any browser —  no install needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Web-Based</span></div></div>
+      <div class="feat-card reveal"><div class="feat-icon">📊</div><div class="feat-title">Admin Web Dashboard</div><div class="feat-desc">See appointments, patient history, visit notes, follow-up responses, cancellation stats, and invoices — all in one dashboard. No install needed.</div><div class="feat-tags"><span class="ftag">All Plans</span><span class="ftag">Web-Based</span></div></div>
     </div>
   </div>
 </section>
@@ -586,7 +592,9 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
         <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
         <div class="plan-features">
           <div class="pf"><span class="pf-check">✓</span><span>WhatsApp appointment booking</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Automatic 24h reminders</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>24h + 1h automatic reminders</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>New patient intake form</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Doctor visit notes &amp; patient history</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Post-visit follow-up messages</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Web admin dashboard</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
@@ -605,8 +613,9 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
           <div class="pf"><span class="pf-check">✓</span><span>Everything in Starter</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Patient cancellation via WhatsApp</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Patient rescheduling via WhatsApp</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Auto waitlist for full slots</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Broadcast to all patients</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Priority WhatsApp support</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
           <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
           <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Daily morning schedule</span></div>
         </div>
@@ -622,7 +631,9 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
           <div class="pf"><span class="pf-check">✓</span><span>Doctor WhatsApp commands</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Block / unblock time slots</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Daily 7 AM schedule on WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Clinic notes &amp; announcements</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Nightly 11 PM notes reminder</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Full patient visit history &amp; notes</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Custom clinic hours per date</span></div>
           <div class="pf"><span class="pf-check">✓</span><span>Dedicated support channel</span></div>
         </div>
         <a href="/signup?plan=suite"><button class="btn-plan outline">Start Free Trial</button></a>
@@ -745,11 +756,12 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="footer-links">
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
+      <a href="#referral">Refer &amp; Earn</a>
       <a href="#faq">FAQ</a>
       <a href="/signup">Sign Up</a>
       <a href="{wa_link}" target="_blank">WhatsApp</a>
     </div>
-    <div class="footer-copy">© 2025 Clinic AI Agent. All rights reserved.</div>
+    <div class="footer-copy">© 2026 Clinic AI Agent. All rights reserved.</div>
   </div>
 </footer>
 
