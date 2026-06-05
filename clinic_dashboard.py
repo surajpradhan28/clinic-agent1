@@ -87,6 +87,7 @@ def render_clinic_dashboard(client: dict) -> str:
     week_appts      = db.get_appointments_range(client_id, today_str, week_end)
     recent_activity = db.get_recent_activity(client_id, limit=15)
     subscription    = db.get_active_subscription(client_id)
+    visit_notes_history = db.get_patient_history_all(client_id, limit=50)
 
     # ── Sub-render helpers ────────────────────────────────────────────────────
 
@@ -147,6 +148,75 @@ def render_clinic_dashboard(client: dict) -> str:
             </tr>"""
         return rows
 
+    def _patient_history_rows():
+        if not visit_notes_history:
+            return '<tr><td colspan="4" class="empty-row">No appointment history yet.</td></tr>'
+
+        # Group by (patient_name, patient_phone)
+        from collections import defaultdict
+        groups: dict = defaultdict(list)
+        for a in visit_notes_history:
+            key = (a["patient_name"], a["patient_phone"])
+            groups[key].append(a)
+
+        rows = ""
+        for (pname, pphone), visits in sorted(groups.items()):
+            visit_count  = len(visits)
+            last_visit   = visits[0]["appointment_date"]   # already sorted desc
+            has_notes    = any(v.get("visit_notes") for v in visits)
+            patient_id   = _esc(f"{pname}_{pphone}").replace(" ", "_")
+
+            # Patient header row (clickable to expand)
+            rows += f"""
+            <tr class="patient-hdr" onclick="togglePatient('{patient_id}')"
+                style="cursor:pointer;background:var(--bg-sec)">
+              <td style="padding:10px 16px">
+                <strong>{_esc(pname)}</strong><br>
+                <small style="color:#6b7280">{_esc(pphone)}</small>
+              </td>
+              <td style="color:#6b7280;font-size:13px">
+                {visit_count} visit(s)<br>
+                <small>Last: {_esc(_fmt_date(last_visit))}</small>
+              </td>
+              <td style="color:#6b7280;font-size:12px">
+                {'✅ Has notes' if has_notes else '<span style="color:#f59e0b">⚠️ No notes</span>'}
+              </td>
+              <td style="text-align:center;color:#6b7280;font-size:18px">
+                <span id="arrow_{patient_id}">▸</span>
+              </td>
+            </tr>"""
+
+            # Detail rows (hidden by default)
+            rows += f'<tr id="detail_{patient_id}" style="display:none"><td colspan="4" style="padding:0">'
+            rows += '<table style="width:100%;border-collapse:collapse">'
+            rows += '<thead><tr style="background:#f9fafb"><th style="padding:8px 24px;font-size:11px;color:#6b7280;text-align:left">Date &amp; Time</th><th style="font-size:11px;color:#6b7280;text-align:left">Status</th><th style="font-size:11px;color:#6b7280;text-align:left">Doctor\'s Notes</th><th style="font-size:11px;color:#6b7280;text-align:center;width:80px">Follow-up</th></tr></thead><tbody>'
+
+            for v in visits:
+                notes_raw = v.get("visit_notes") or ""
+                notes_cell = (
+                    f'<span style="white-space:pre-wrap;font-size:13px">{_esc(notes_raw)}</span>'
+                    if notes_raw
+                    else '<span style="color:#9ca3af;font-style:italic;font-size:12px">No notes added</span>'
+                )
+                fu_days = v.get("followup_days", 2)
+                fu_label = f"{fu_days}d" if fu_days else "—"
+                rows += f"""
+                <tr style="border-top:1px solid #f3f4f6">
+                  <td style="padding:9px 24px;font-size:13px">
+                    {_esc(_fmt_date(v['appointment_date']))}<br>
+                    <small style="color:#888">{_esc(_fmt_time(v['slot_time']))}</small>
+                  </td>
+                  <td style="padding:9px 16px">{_status_badge(v['status'])}</td>
+                  <td style="padding:9px 16px;max-width:280px;word-break:break-word">{notes_cell}</td>
+                  <td style="padding:9px 16px;text-align:center">
+                    <span style="background:#fef3c7;color:#92400e;padding:2px 8px;
+                      border-radius:10px;font-size:11px;font-weight:600">{_esc(fu_label)}</span>
+                  </td>
+                </tr>"""
+            rows += '</tbody></table></td></tr>'
+
+        return rows
+
     def _sub_info():
         if not subscription:
             return '<span style="color:#c5221f">No active subscription</span>'
@@ -173,6 +243,8 @@ def render_clinic_dashboard(client: dict) -> str:
   <title>{_esc(clinic_name)} — Dashboard</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+    :root {{ --bg-sec: #f9fafb; }}
 
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -282,6 +354,33 @@ def render_clinic_dashboard(client: dict) -> str:
                    font-weight: 600; letter-spacing: 0.5px; margin-bottom: 3px; }}
     .info-value {{ font-size: 14px; color: #1f2937; }}
 
+    /* ── Patient history notes ── */
+    .notes-text {{
+      white-space: pre-wrap;
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.5;
+    }}
+
+    /* ── Search box ── */
+    .search-box {{
+      padding: 10px 16px 14px;
+      border-bottom: 1px solid #f3f4f6;
+    }}
+    .search-box input {{
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      box-sizing: border-box;
+    }}
+    .search-box input:focus {{
+      border-color: #128c7e;
+      box-shadow: 0 0 0 2px rgba(18,140,126,.15);
+    }}
+
     /* ── Footer ── */
     footer {{
       text-align: center;
@@ -358,6 +457,28 @@ def render_clinic_dashboard(client: dict) -> str:
     </div>
   </div>
 
+  <!-- Patient visit history (all visits, grouped by patient) -->
+  <div class="card">
+    <div class="card-header">📋 Patient History</div>
+    <div class="search-box">
+      <input type="text" id="notesSearch" placeholder="🔍 Search by patient name or phone…"
+             oninput="filterPatients(this.value)">
+    </div>
+    <div class="card-body">
+      <table id="historyTable">
+        <thead>
+          <tr>
+            <th>Patient</th>
+            <th>Visits</th>
+            <th>Notes</th>
+            <th style="text-align:center"></th>
+          </tr>
+        </thead>
+        <tbody id="historyTbody">{_patient_history_rows()}</tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Clinic info + subscription -->
   <div class="card">
     <div class="card-header">ℹ️ Clinic Info &amp; Subscription</div>
@@ -382,6 +503,33 @@ def render_clinic_dashboard(client: dict) -> str:
   </div>
 
 </div><!-- /container -->
+
+<script>
+function togglePatient(id) {{
+  var detail = document.getElementById('detail_' + id);
+  var arrow  = document.getElementById('arrow_' + id);
+  if (!detail) return;
+  var open = detail.style.display !== 'none';
+  detail.style.display = open ? 'none' : '';
+  arrow.textContent    = open ? '▸' : '▾';
+}}
+
+function filterPatients(query) {{
+  var q = query.toLowerCase().trim();
+  var rows = document.querySelectorAll('#historyTbody tr.patient-hdr');
+  rows.forEach(function(hdr) {{
+    var text    = hdr.innerText.toLowerCase();
+    var visible = !q || text.includes(q);
+    hdr.style.display = visible ? '' : 'none';
+    // Hide associated detail row too
+    var pid    = hdr.getAttribute('onclick').match(/'([^']+)'/)[1];
+    var detail = document.getElementById('detail_' + pid);
+    if (detail) detail.style.display = 'none';
+    var arrow  = document.getElementById('arrow_' + pid);
+    if (arrow) arrow.textContent = '▸';
+  }});
+}}
+</script>
 
 <footer>
   Powered by Clinic AI Agent &nbsp;·&nbsp; Read-only view &nbsp;·&nbsp;

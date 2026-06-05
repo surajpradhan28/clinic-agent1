@@ -111,7 +111,7 @@ class Settings:
     INVOICE_GSTIN: str = os.getenv("INVOICE_GSTIN", "")   # leave blank if not GST-registered
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
-    FOLLOWUP_DAYS: int = 7          # days after appointment to send follow-up
+    FOLLOWUP_DAYS: int = 2          # days after appointment to send follow-up (default 2)
     REMINDER_HOURS_BEFORE: int = 24  # hours before appointment to send reminder
     JOB_INTERVAL_HOURS: int = 1     # scheduler poll interval
 

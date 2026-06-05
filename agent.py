@@ -418,12 +418,86 @@ _TOOLS_DOCTOR = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_visit_notes",
+            "description": (
+                "Save doctor's notes/description for a patient's visit and set the follow-up timing. "
+                "You do NOT need the appointment_id — you can identify the appointment by "
+                "patient_name + date (defaults to today if omitted), or by slot_time. "
+                "If appointment_id is known (from view_appointments), pass it directly. "
+                "Always confirm notes with the doctor before saving."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notes": {
+                        "type": "string",
+                        "description": "Doctor's notes for this visit (diagnosis, treatment, prescription, advice, etc.)",
+                    },
+                    "patient_name": {
+                        "type": "string",
+                        "description": "Patient's name — used to find the appointment when appointment_id is not known.",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Appointment date in YYYY-MM-DD format. Defaults to today if omitted.",
+                    },
+                    "slot_time": {
+                        "type": "string",
+                        "description": "Slot time (HH:MM) — helps narrow down if multiple patients share the same date.",
+                    },
+                    "appointment_id": {
+                        "type": "integer",
+                        "description": "Appointment ID — use this if already known; skips the name/date lookup.",
+                    },
+                    "followup_days": {
+                        "type": "integer",
+                        "description": "Days after the appointment to send the follow-up WhatsApp. Default: 2.",
+                    },
+                },
+                "required": ["notes"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_patient_history",
+            "description": (
+                "View a patient's full visit history including doctor notes for each visit. "
+                "Provide patient_phone, patient_name, or both. "
+                "If multiple patients share the same name or phone, the tool will ask you "
+                "to confirm which person before showing history — pass both fields to skip that step."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "patient_phone": {
+                        "type": "string",
+                        "description": "Patient's phone number (with country code, e.g. 919876543210)",
+                    },
+                    "patient_name": {
+                        "type": "string",
+                        "description": (
+                            "Patient's full name. Required to narrow down when "
+                            "multiple people share a phone, or when multiple patients "
+                            "have the same name."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 # ── Doctor plan-feature sets ────────────────────────────────────────────────
 _DOCTOR_STARTER_FNS: frozenset = frozenset({
     "check_available_slots", "view_appointments",
     "block_slots", "unblock_slots", "view_blocked_slots", "view_clinic_info",
+    "save_visit_notes", "view_patient_history",
 })
 _DOCTOR_PRO_FNS: frozenset = _DOCTOR_STARTER_FNS | frozenset({
     "update_clinic_info", "broadcast_message",
@@ -1139,6 +1213,241 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
             logger.error("broadcast_message error: %s", exc)
             return json.dumps({"success": False, "error": str(exc)})
 
+    elif fn_name == "save_visit_notes":
+        notes         = (fn_args.get("notes") or "").strip()
+        appt_id       = fn_args.get("appointment_id")
+        patient_name  = (fn_args.get("patient_name") or "").strip()
+        date_str      = (fn_args.get("date") or "").strip()
+        slot_time     = (fn_args.get("slot_time") or "").strip()
+        followup_days = int(fn_args.get("followup_days") or 2)
+
+        if not notes:
+            return json.dumps({"success": False, "error": "notes cannot be empty"})
+        if followup_days < 0 or followup_days > 365:
+            return json.dumps({"success": False, "error": "followup_days must be between 0 and 365"})
+
+        # ── Resolve appointment ID if not directly provided ───────────────────
+        if not appt_id:
+            # Default to today if date not specified
+            today_str = datetime.now(_IST).strftime("%Y-%m-%d")
+            lookup_date = date_str or today_str
+
+            if not patient_name and not slot_time:
+                return json.dumps({
+                    "success": False,
+                    "error": (
+                        "Please provide the patient's name (or appointment_id / slot_time) "
+                        "so I can find the right appointment."
+                    ),
+                })
+
+            matches = db.find_appointment_for_notes(
+                client_id,
+                date=lookup_date,
+                patient_name=patient_name or None,
+                slot_time=slot_time or None,
+            )
+
+            if not matches:
+                detail = patient_name or slot_time
+                return json.dumps({
+                    "success": False,
+                    "error": (
+                        f"No appointment found for '{detail}' on {lookup_date}. "
+                        "Please check the date or patient name."
+                    ),
+                })
+
+            if len(matches) > 1:
+                # Multiple hits — ask doctor to be more specific
+                options = [
+                    f"• {m['patient_name']} at {m['slot_time']} (ID {m['id']})"
+                    for m in matches
+                ]
+                return json.dumps({
+                    "success": False,
+                    "needs_clarification": True,
+                    "matches": [
+                        {"appointment_id": m["id"], "patient_name": m["patient_name"],
+                         "slot_time": m["slot_time"]}
+                        for m in matches
+                    ],
+                    "message": (
+                        f"Found {len(matches)} appointments on {lookup_date}. "
+                        "Which patient did you mean?\n" + "\n".join(options)
+                    ),
+                })
+
+            appt_id = matches[0]["id"]
+            patient_name = matches[0]["patient_name"]
+            lookup_date_for_msg = lookup_date
+
+        # ── Save notes ────────────────────────────────────────────────────────
+        try:
+            db.save_visit_notes(client_id, int(appt_id), notes, followup_days)
+            followup_msg = (
+                f"Follow-up message will be sent in *{followup_days} day(s)*."
+                if followup_days > 0
+                else "No follow-up scheduled."
+            )
+            saved_for = patient_name or f"appointment {appt_id}"
+            return json.dumps({
+                "success":        True,
+                "appointment_id": appt_id,
+                "patient_name":   patient_name,
+                "followup_days":  followup_days,
+                "message":        f"✅ Notes saved for *{saved_for}*. {followup_msg}",
+            })
+        except Exception as exc:
+            logger.error("save_visit_notes error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)})
+
+    elif fn_name == "view_patient_history":
+        patient_phone = (fn_args.get("patient_phone") or "").strip()
+        patient_name  = (fn_args.get("patient_name") or "").strip()
+
+        def _fmt_visit_date(d: str) -> str:
+            try:
+                return datetime.strptime(d, "%Y-%m-%d").strftime("%d %b %Y")
+            except Exception:
+                return d
+
+        def _build_visits(appt_rows: list[dict]) -> list[dict]:
+            return [
+                {
+                    "appointment_id": a["id"],
+                    "date":           _fmt_visit_date(a["appointment_date"]),
+                    "slot_time":      a.get("slot_time", ""),
+                    "status":         a.get("status", ""),
+                    "visit_notes":    a.get("visit_notes") or "—",
+                    "followup_days":  a.get("followup_days", 2),
+                }
+                for a in appt_rows
+            ]
+
+        # ── Case A: both phone AND name provided ──────────────────────────────
+        # Most specific — skip all disambiguation, go straight to history.
+        if patient_phone and patient_name:
+            rows = db.get_patient_history_by_name_and_phone(
+                client_id, patient_phone, patient_name
+            )
+            if not rows:
+                # Fall back to all rows for that phone (name might be slightly different)
+                rows = db.get_patient_history(client_id, patient_phone)
+            return json.dumps({
+                "found": True,
+                "patient_phone": patient_phone,
+                "patient_name":  patient_name,
+                "total_visits":  len(rows),
+                "visits":        _build_visits(rows),
+            })
+
+        # ── Case B: only phone provided ───────────────────────────────────────
+        # Check whether multiple people share this phone (family members).
+        if patient_phone and not patient_name:
+            distinct = db.get_distinct_names_for_phone(client_id, patient_phone)
+            if not distinct:
+                return json.dumps({
+                    "found": False,
+                    "patient_phone": patient_phone,
+                    "message": "No appointment history found for this phone number.",
+                })
+            if len(distinct) == 1:
+                # Only one person — return directly
+                patient_name = distinct[0]["patient_name"]
+                rows = db.get_patient_history(client_id, patient_phone)
+                return json.dumps({
+                    "found":         True,
+                    "patient_phone": patient_phone,
+                    "patient_name":  patient_name,
+                    "total_visits":  len(rows),
+                    "visits":        _build_visits(rows),
+                })
+            else:
+                # Multiple people share this phone — ask which one
+                people = [
+                    {
+                        "name":        p["patient_name"],
+                        "visit_count": p["visit_count"],
+                        "first_visit": _fmt_visit_date(p["first_visit"] or ""),
+                        "last_visit":  _fmt_visit_date(p["last_visit"] or ""),
+                    }
+                    for p in distinct
+                ]
+                return json.dumps({
+                    "found":              False,
+                    "needs_name":         True,
+                    "patient_phone":      patient_phone,
+                    "people_on_this_phone": people,
+                    "message": (
+                        f"This phone ({patient_phone}) is shared by "
+                        f"{len(distinct)} patients. "
+                        "Please tell me which person's history you want: "
+                        + ", ".join(p["patient_name"] for p in distinct)
+                    ),
+                })
+
+        # ── Case C: only name provided ────────────────────────────────────────
+        # Look up by name. May find 0, 1, or many matches.
+        if patient_name and not patient_phone:
+            patients = db.search_patient_by_name(client_id, patient_name)
+            if not patients:
+                return json.dumps({
+                    "found": False,
+                    "message": f"No patient found with name '{patient_name}'.",
+                })
+            if len(patients) == 1:
+                patient_phone = patients[0]["phone"]
+                # Even with one name match, check if that phone is shared
+                distinct = db.get_distinct_names_for_phone(client_id, patient_phone)
+                rows = db.get_patient_history_by_name_and_phone(
+                    client_id, patient_phone, patient_name
+                ) if len(distinct) > 1 else db.get_patient_history(client_id, patient_phone)
+                return json.dumps({
+                    "found":         True,
+                    "patient_phone": patient_phone,
+                    "patient_name":  patient_name,
+                    "total_visits":  len(rows),
+                    "visits":        _build_visits(rows),
+                })
+            else:
+                # Multiple patients with the same name — show phone + first-visit to help doctor pick
+                matches = []
+                for p in patients[:6]:
+                    ph = p["phone"]
+                    distinct = db.get_distinct_names_for_phone(client_id, ph)
+                    info = next(
+                        (d for d in distinct if d["patient_name"].lower() == patient_name.lower()),
+                        None,
+                    )
+                    matches.append({
+                        "name":        p["name"],
+                        "phone":       ph,
+                        "visit_count": info["visit_count"] if info else 0,
+                        "first_visit": _fmt_visit_date(info["first_visit"]) if info else "—",
+                        "last_visit":  _fmt_visit_date(info["last_visit"]) if info else "—",
+                    })
+                return json.dumps({
+                    "found":           False,
+                    "needs_phone":     True,
+                    "multiple_matches": matches,
+                    "message": (
+                        f"Found {len(patients)} patients named '{patient_name}'. "
+                        "Please provide the phone number (or more details) to pick the right one:\n"
+                        + "\n".join(
+                            f"• {m['name']} — 📱 {m['phone']} "
+                            f"({m['visit_count']} visit(s), first: {m['first_visit']})"
+                            for m in matches
+                        )
+                    ),
+                })
+
+        # ── Case D: nothing provided ──────────────────────────────────────────
+        return json.dumps({
+            "found": False,
+            "message": "Please provide patient_phone or patient_name to look up history.",
+        })
+
     return json.dumps({"error": f"Unknown doctor function: {fn_name}"})
 
 
@@ -1241,6 +1550,9 @@ You help the doctor manage their clinic schedule. Available actions:
 - Add / list / remove custom AI knowledge notes
 - Set custom clinic hours for a specific date
 - Broadcast a message to ALL registered patients (holiday notice, health tips, announcements)
+- Save visit notes for a patient after their appointment (diagnosis, treatment, advice)
+- View a patient's full visit history including all past notes
+- Set follow-up timing per patient (default: 2 days after visit)
 
 Default clinic hours:
   Morning : {settings.MORNING_START} – {settings.MORNING_END}
@@ -1258,7 +1570,20 @@ Rules:
 - Always confirm what was done with a clear summary.
 - "Block all day" → block_slots with slot_times=["all"].
 - When blocking slots with existing appointments, patients are auto-notified and appointments cancelled.
-- Use emojis sparingly for clarity (✅ ❌ 🚫)."""
+- Use emojis sparingly for clarity (✅ ❌ 🚫).
+- Adding visit notes (most common workflow):
+  The doctor does NOT need to know the appointment ID.
+  Natural phrases to recognise and act on immediately:
+    "Notes for Rahul: fever, prescribed paracetamol, rest 3 days"
+    "Add notes for 10am patient: BP high, referred cardiologist"
+    "Priya Sharma — cold, syrup prescribed, follow up in 5 days"
+  → Call save_visit_notes with patient_name (and slot_time if mentioned).
+    Date defaults to today. If the doctor specifies a different day, set date.
+  → If the doctor says "follow up in X days", set followup_days=X. Default is 2.
+  → Always echo back a one-line confirmation: "✅ Notes saved for Rahul Sharma. Follow-up in 2 days."
+  → If two patients share the same name on that date, list both with slot times and ask which one.
+- For view_patient_history: show a clear chronological list with each visit date and notes.
+- When the doctor says "history of [patient]" or "past visits of [patient]", call view_patient_history."""
 
 
 # ── Doctor mode detection ─────────────────────────────────────────────────────

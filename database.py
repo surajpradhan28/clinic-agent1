@@ -393,11 +393,16 @@ def create_appointment(
     appt_row = appt.data[0]
     appt_id  = appt_row["id"]
 
-    # Schedule 7-day follow-up
+    # Schedule follow-up (default 2 days; doctor can override later via save_visit_notes)
     appt_dt = datetime.strptime(
         f"{appointment_date} {slot_time}", "%Y-%m-%d %H:%M"
-    ).replace(tzinfo=timezone.utc)
-    followup_at = appt_dt + timedelta(days=settings.FOLLOWUP_DAYS)
+    ).replace(tzinfo=_IST)
+    followup_days_default = settings.FOLLOWUP_DAYS  # 2 days by default
+    followup_at = appt_dt + timedelta(days=followup_days_default)
+
+    db.table("appointments").update(
+        {"followup_days": followup_days_default}
+    ).eq("id", appt_id).execute()
 
     db.table("followups").insert({
         "client_id": client_id,
@@ -477,7 +482,7 @@ def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
     db = get_db()
     result = (
         db.table("appointments")
-        .select("patient_name, patient_phone, slot_time")
+        .select("id, patient_name, patient_phone, slot_time, visit_notes")
         .eq("client_id", client_id)
         .eq("appointment_date", date)
         .eq("status", "confirmed")
@@ -1629,3 +1634,295 @@ def get_referrer_by_code(referral_code: str) -> dict | None:
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VISIT NOTES & PATIENT HISTORY
+# ══════════════════════════════════════════════════════════════════════════════
+
+def save_visit_notes(
+    client_id: int,
+    appt_id: int,
+    notes: str,
+    followup_days: int = 2,
+) -> dict:
+    """
+    Save doctor's notes for a completed visit and reschedule the follow-up.
+
+    - Writes visit_notes + followup_days to the appointments row.
+    - Recalculates the pending followup scheduled_at to appointment_date + followup_days.
+    Returns the updated appointment row.
+    """
+    db_c = get_db()
+
+    # Fetch the appointment to get date/slot
+    appt_res = (
+        db_c.table("appointments")
+        .select("id, client_id, appointment_date, slot_time, visit_notes")
+        .eq("id", appt_id)
+        .eq("client_id", client_id)
+        .limit(1)
+        .execute()
+    )
+    if not appt_res.data:
+        raise ValueError(f"Appointment {appt_id} not found for client {client_id}")
+
+    appt = appt_res.data[0]
+
+    # Update visit notes + followup_days on the appointment
+    update_res = (
+        db_c.table("appointments")
+        .update({
+            "visit_notes":   notes,
+            "followup_days": followup_days,
+        })
+        .eq("id", appt_id)
+        .eq("client_id", client_id)
+        .execute()
+    )
+
+    # Recalculate and update the pending followup scheduled_at
+    try:
+        appt_dt = datetime.strptime(
+            f"{appt['appointment_date']} {appt['slot_time']}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=_IST)
+        new_followup_at = appt_dt + timedelta(days=followup_days)
+
+        db_c.table("followups").update({
+            "scheduled_at": new_followup_at.isoformat(),
+        }).eq("appointment_id", appt_id).eq("status", "pending").execute()
+
+        logger.info(
+            "Visit notes saved + followup rescheduled to %s (client=%s, appt=%s)",
+            new_followup_at.date(), client_id, appt_id,
+        )
+    except Exception as exc:
+        logger.warning("Could not reschedule followup for appt %s: %s", appt_id, exc)
+
+    return update_res.data[0] if update_res.data else {}
+
+
+def get_patient_history(
+    client_id: int,
+    phone: str,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Return all appointments for a patient at this clinic, newest first.
+    Includes: date, slot_time, status, visit_notes, followup_days.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select(
+            "id, appointment_date, slot_time, status, visit_notes, "
+            "followup_days, created_at, cancelled_at"
+        )
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .order("appointment_date", desc=True)
+        .order("slot_time", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_patients_list(client_id: int) -> list[dict]:
+    """
+    Return all unique patients for a clinic with their last visit date.
+    Used by the dashboard patient history section.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("patients")
+        .select("id, name, phone, created_at")
+        .eq("client_id", client_id)
+        .order("name", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_patient_history_all(client_id: int, limit: int = 200) -> list[dict]:
+    """
+    Return all appointments for dashboard patient history display.
+    Includes visits with and without notes.
+    Ordered by patient_name then appointment_date descending so rows
+    can be grouped by patient on the frontend.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select(
+            "id, patient_name, patient_phone, appointment_date, slot_time, "
+            "status, visit_notes, followup_days, created_at"
+        )
+        .eq("client_id", client_id)
+        .in_("status", ["confirmed", "completed", "cancelled"])
+        .order("patient_name", desc=False)
+        .order("appointment_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def search_patient_by_name(client_id: int, name_query: str) -> list[dict]:
+    """Search patients by name (case-insensitive contains). Used in dashboard."""
+    db_c = get_db()
+    result = (
+        db_c.table("patients")
+        .select("id, name, phone, created_at")
+        .eq("client_id", client_id)
+        .ilike("name", f"%{name_query}%")
+        .order("name", desc=False)
+        .limit(20)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_recent_appointments_for_patient(
+    client_id: int,
+    phone: str,
+    limit: int = 10,
+) -> list[dict]:
+    """Return recent appointments for a specific patient (for WhatsApp history view)."""
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select(
+            "id, appointment_date, slot_time, status, visit_notes, followup_days"
+        )
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .in_("status", ["confirmed", "completed", "cancelled"])
+        .order("appointment_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_appointments_without_notes(client_id: int, date: str) -> list[dict]:
+    """
+    Return confirmed/completed appointments on `date` that have no visit notes yet.
+    Used by the nightly reminder job to prompt the doctor.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select("id, patient_name, slot_time, status")
+        .eq("client_id", client_id)
+        .eq("appointment_date", date)
+        .in_("status", ["confirmed", "completed"])
+        .is_("visit_notes", "null")
+        .order("slot_time", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+def find_appointment_for_notes(
+    client_id: int,
+    date: str,
+    patient_name: str | None = None,
+    patient_phone: str | None = None,
+    slot_time: str | None = None,
+) -> list[dict]:
+    """
+    Find appointment(s) matching the given criteria so the doctor can add notes
+    without needing to know the appointment ID.
+
+    Returns a list (usually 1 item). Multiple items = ambiguous, caller must ask
+    the doctor to be more specific.
+
+    Matches confirmed OR completed appointments on `date`.
+    """
+    db_c = get_db()
+    query = (
+        db_c.table("appointments")
+        .select("id, patient_name, patient_phone, slot_time, visit_notes, status")
+        .eq("client_id", client_id)
+        .eq("appointment_date", date)
+        .in_("status", ["confirmed", "completed"])
+    )
+    if patient_phone:
+        query = query.eq("patient_phone", patient_phone)
+    if patient_name:
+        query = query.ilike("patient_name", f"%{patient_name}%")
+    if slot_time:
+        query = query.eq("slot_time", slot_time)
+
+    result = query.order("slot_time", desc=False).execute()
+    return result.data or []
+
+
+def get_distinct_names_for_phone(client_id: int, phone: str) -> list[dict]:
+    """
+    Return each distinct patient name that has used this phone number,
+    along with their visit count and first visit date.
+    Used to disambiguate family members who share a phone.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select("patient_name, appointment_date")
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .in_("status", ["confirmed", "completed", "cancelled"])
+        .order("appointment_date", desc=False)
+        .execute()
+    )
+    rows = result.data or []
+
+    # Group by name — collect visit count and first/last visit date
+    from collections import defaultdict
+    groups: dict[str, dict] = defaultdict(lambda: {"count": 0, "first": None, "last": None})
+    for r in rows:
+        name = r["patient_name"]
+        date = r["appointment_date"]
+        groups[name]["count"] += 1
+        if groups[name]["first"] is None or date < groups[name]["first"]:
+            groups[name]["first"] = date
+        if groups[name]["last"] is None or date > groups[name]["last"]:
+            groups[name]["last"] = date
+
+    return [
+        {
+            "patient_name": name,
+            "visit_count":  info["count"],
+            "first_visit":  info["first"],
+            "last_visit":   info["last"],
+        }
+        for name, info in sorted(groups.items())
+    ]
+
+
+def get_patient_history_by_name_and_phone(
+    client_id: int,
+    phone: str,
+    patient_name: str,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Return appointment history for a specific (phone, name) pair.
+    Used when multiple people share a phone — fetch only the named person's records.
+    """
+    db_c = get_db()
+    result = (
+        db_c.table("appointments")
+        .select(
+            "id, appointment_date, slot_time, status, visit_notes, "
+            "followup_days, created_at"
+        )
+        .eq("client_id", client_id)
+        .eq("patient_phone", phone)
+        .eq("patient_name", patient_name)
+        .order("appointment_date", desc=True)
+        .order("slot_time", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []

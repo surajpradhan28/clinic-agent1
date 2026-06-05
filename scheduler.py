@@ -947,6 +947,82 @@ async def _run_trial_automation() -> None:
         logger.error("[TrialAuto] Job failed: %s", exc, exc_info=True)
 
 
+# ── Job 10: Nightly visit-notes reminder to doctor (11 PM IST) ───────────────
+
+async def _run_notes_reminder() -> None:
+    """
+    Every night at 11 PM IST, check each clinic's appointments for today.
+    If any patient still has no visit notes, send the doctor a WhatsApp reminder
+    listing those patients so they can add notes before end of day.
+    Skips silently if all patients already have notes or there were no appointments.
+    """
+    logger.info("[Scheduler] Running nightly notes reminder job…")
+    today_str = datetime.now(_IST).strftime("%Y-%m-%d")
+
+    try:
+        clients = db.get_all_active_clients()
+        for client in clients:
+            client_id    = client["id"]
+            client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+            client_token = client.get("whatsapp_token") or None
+            doctor_phone = (client.get("contact_phone") or "").strip() or (
+                settings.DOCTOR_PHONE if client_id == 1 else ""
+            )
+            if not doctor_phone:
+                continue
+
+            db_settings = db.get_all_clinic_settings(client_id)
+            doctor_name = db_settings.get("doctor_name") or client.get("doctor_name") or "Doctor"
+            first_name  = doctor_name.split()[-1]
+
+            missing = db.get_appointments_without_notes(client_id, today_str)
+            if not missing:
+                logger.debug(
+                    "[NotesReminder] Client %s: all notes done or no appointments today.",
+                    client_id,
+                )
+                continue
+
+            # Build patient list
+            lines = []
+            for appt in missing:
+                try:
+                    slot_display = datetime.strptime(
+                        appt["slot_time"], "%H:%M"
+                    ).strftime("%-I:%M %p")
+                except Exception:
+                    slot_display = appt["slot_time"]
+                lines.append(f"  • {appt['patient_name']} ({slot_display})")
+
+            patient_list = "\n".join(lines)
+            count = len(missing)
+
+            msg = (
+                f"📋 *Good Evening, Dr. {first_name}!*\n\n"
+                f"You have *{count} patient(s)* from today without visit notes yet:\n\n"
+                f"{patient_list}\n\n"
+                f"To add notes, just send me something like:\n"
+                f'_"Notes for {missing[0]["patient_name"]}: [your notes here]"_\n\n'
+                f"Notes help you track patient history and auto-schedule their follow-up. 🩺"
+            )
+
+            success = await whatsapp.send_text(
+                doctor_phone, msg, phone_id=client_pid, token=client_token
+            )
+            if success:
+                logger.info(
+                    "[NotesReminder] Reminder sent to client=%s doctor (%d patient(s) without notes)",
+                    client_id, count,
+                )
+            else:
+                logger.error(
+                    "[NotesReminder] Failed to send reminder (client=%s)", client_id
+                )
+
+    except Exception as exc:
+        logger.error("[NotesReminder] Job error: %s", exc, exc_info=True)
+
+
 # ── Job 9: Google Calendar sync ──────────────────────────────────────────────
 
 async def _run_gcal_sync() -> None:
@@ -1038,6 +1114,13 @@ def start() -> None:
         _run_gcal_sync,
         trigger=IntervalTrigger(minutes=15),
         id="gcal_sync", replace_existing=True, misfire_grace_time=120,
+    )
+
+    # ── Nightly notes reminder: 11:00 PM IST = 17:30 UTC ──
+    scheduler.add_job(
+        _run_notes_reminder,
+        trigger=CronTrigger(hour=17, minute=30, timezone="UTC"),
+        id="notes_reminder", replace_existing=True, misfire_grace_time=1800,
     )
 
     scheduler.start()
