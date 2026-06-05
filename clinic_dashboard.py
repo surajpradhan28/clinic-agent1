@@ -99,6 +99,48 @@ def render_clinic_dashboard(client: dict) -> str:
         logger.warning("Dashboard: could not load referral stats: %s", _e)
         referral_stats = {}
 
+    try:
+        followup_responses = db.get_followup_responses(client_id, limit=30)
+    except Exception as _e:
+        logger.warning("Dashboard: followup_responses error: %s", _e)
+        followup_responses = []
+
+    try:
+        monthly_counts = db.get_monthly_appointment_counts(client_id, months=6)
+    except Exception as _e:
+        logger.warning("Dashboard: monthly_counts error: %s", _e)
+        monthly_counts = []
+
+    try:
+        cancel_stats = db.get_cancellation_stats(client_id)
+    except Exception as _e:
+        logger.warning("Dashboard: cancel_stats error: %s", _e)
+        cancel_stats = {"total": 0, "completed": 0, "cancelled": 0, "confirmed": 0, "cancel_rate": 0}
+
+    try:
+        waitlist_rows = db.get_waitlist_summary(client_id, limit=30)
+    except Exception as _e:
+        logger.warning("Dashboard: waitlist error: %s", _e)
+        waitlist_rows = []
+
+    try:
+        invoice_rows = db.get_invoices_for_client(client_id, limit=6)
+    except Exception as _e:
+        logger.warning("Dashboard: invoices error: %s", _e)
+        invoice_rows = []
+
+    try:
+        upcoming_followups = db.get_upcoming_followups(client_id, days=4)
+    except Exception as _e:
+        logger.warning("Dashboard: upcoming_followups error: %s", _e)
+        upcoming_followups = []
+
+    try:
+        intake_rows = db.get_recent_intakes(client_id, limit=20)
+    except Exception as _e:
+        logger.warning("Dashboard: intake_rows error: %s", _e)
+        intake_rows = []
+
     from config import settings as _settings
     referral_code  = referral_stats.get("referral_code") or "—"
     referral_link  = (
@@ -169,6 +211,211 @@ def render_clinic_dashboard(client: dict) -> str:
               <td>{_status_badge(a['status'])}</td>
             </tr>"""
         return rows
+
+    # ── Follow-up tracker ─────────────────────────────────────────────────────
+    def _followup_tracker_rows():
+        if not followup_responses:
+            return '<tr><td colspan="4" class="empty-row">No follow-ups sent yet.</td></tr>'
+        rows = ""
+        for f in followup_responses:
+            appt      = f.get("appointments") or {}
+            pname     = _esc(appt.get("patient_name") or "—")
+            appt_date = _esc(_fmt_date(appt.get("appointment_date") or ""))
+            sentiment = (f.get("sentiment") or "").lower()
+            response  = _esc(f.get("patient_response") or "—")
+            status    = f.get("status", "sent")
+
+            if sentiment == "positive":
+                badge = '<span style="background:#e6f4ea;color:#1e7e34;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Recovered ✓</span>'
+            elif sentiment == "negative":
+                badge = '<span style="background:#fce8e6;color:#c5221f;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Getting worse ⚠</span>'
+            elif sentiment == "neutral":
+                badge = '<span style="background:#e8f0fe;color:#1967d2;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Same</span>'
+            elif status == "sent":
+                badge = '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">No reply yet</span>'
+            else:
+                badge = '<span style="background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">—</span>'
+
+            rows += f"""
+            <tr>
+              <td><strong>{pname}</strong></td>
+              <td>{appt_date}</td>
+              <td>{badge}</td>
+              <td style="max-width:220px;font-size:12px;color:#6b7280;word-break:break-word">{response[:80] + ('…' if len(response) > 80 else '')}</td>
+            </tr>"""
+        return rows
+
+    # ── Trend chart (pure CSS bars) ───────────────────────────────────────────
+    def _trend_chart():
+        if not monthly_counts:
+            return '<p class="empty-row">No data yet.</p>'
+        max_count = max((r["count"] for r in monthly_counts), default=1) or 1
+        bars = ""
+        for r in monthly_counts:
+            pct    = round(r["count"] / max_count * 100)
+            height = max(pct, 4)
+            bars += f"""
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="font-size:12px;font-weight:600;color:#1f2937">{r['count']}</div>
+              <div style="width:100%;height:120px;display:flex;align-items:flex-end">
+                <div style="width:100%;height:{height}%;background:#128c7e;border-radius:4px 4px 0 0;min-height:4px"></div>
+              </div>
+              <div style="font-size:11px;color:#6b7280;text-align:center">{_esc(r['month'])}</div>
+            </div>"""
+        return f'<div style="display:flex;gap:8px;align-items:flex-end;padding:16px 20px">{bars}</div>'
+
+    # ── Cancellation stats ────────────────────────────────────────────────────
+    def _cancel_stats_html():
+        total     = cancel_stats.get("total", 0)
+        completed = cancel_stats.get("completed", 0)
+        cancelled = cancel_stats.get("cancelled", 0)
+        confirmed = cancel_stats.get("confirmed", 0)
+        rate      = cancel_stats.get("cancel_rate", 0)
+        comp_pct  = round(completed / total * 100) if total else 0
+        return f"""
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0">
+          <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+            <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Total (this month)</div>
+            <div style="font-size:28px;font-weight:700;color:#1f2937">{total}</div>
+          </div>
+          <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+            <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Completed</div>
+            <div style="font-size:28px;font-weight:700;color:#1e7e34">{completed}</div>
+            <div style="font-size:12px;color:#6b7280">{comp_pct}% completion rate</div>
+          </div>
+          <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+            <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Cancelled</div>
+            <div style="font-size:28px;font-weight:700;color:#c5221f">{cancelled}</div>
+            <div style="font-size:12px;color:#6b7280">{rate}% cancellation rate</div>
+          </div>
+          <div style="padding:16px 20px;border-bottom:1px solid #f3f4f6">
+            <div style="font-size:11px;text-transform:uppercase;color:#9ca3af;font-weight:600;letter-spacing:.5px;margin-bottom:4px">Upcoming (confirmed)</div>
+            <div style="font-size:28px;font-weight:700;color:#1967d2">{confirmed}</div>
+          </div>
+        </div>"""
+
+    # ── Waitlist ──────────────────────────────────────────────────────────────
+    def _waitlist_rows():
+        if not waitlist_rows:
+            return '<tr><td colspan="4" class="empty-row">No patients on the waitlist.</td></tr>'
+        rows = ""
+        for w in waitlist_rows:
+            try:
+                from datetime import datetime as _dt
+                waiting_since = _dt.fromisoformat(w["created_at"].replace("Z", "+00:00"))
+                delta = datetime.now(timezone.utc) - waiting_since
+                if delta.days == 0:
+                    since_str = "Today"
+                elif delta.days == 1:
+                    since_str = "1 day ago"
+                else:
+                    since_str = f"{delta.days} days ago"
+            except Exception:
+                since_str = "—"
+            rows += f"""
+            <tr>
+              <td><strong>{_esc(w['patient_name'])}</strong><br>
+                  <small style="color:#6b7280">{_esc(w['patient_phone'])}</small></td>
+              <td>{_esc(_fmt_date(w['requested_date']))}</td>
+              <td><strong>{_esc(_fmt_time(w['requested_slot']))}</strong></td>
+              <td style="color:#9ca3af;font-size:12px">{_esc(since_str)}</td>
+            </tr>"""
+        return rows
+
+    # ── Invoice history ───────────────────────────────────────────────────────
+    def _invoice_rows():
+        if not invoice_rows:
+            return '<tr><td colspan="4" class="empty-row">No invoices yet.</td></tr>'
+        rows = ""
+        for inv in invoice_rows:
+            period = _esc(_fmt_date(inv.get("period_start", "")))
+            try:
+                period = datetime.strptime(inv["period_start"][:7], "%Y-%m").strftime("%B %Y")
+            except Exception:
+                pass
+            amount  = f"₹{float(inv.get('amount', 0)):,.0f}"
+            inv_status = (inv.get("status") or "").lower()
+            if inv_status == "paid":
+                sbadge = '<span style="background:#e6f4ea;color:#1e7e34;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Paid</span>'
+            elif inv_status == "overdue":
+                sbadge = '<span style="background:#fce8e6;color:#c5221f;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Overdue</span>'
+            else:
+                sbadge = '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">Unpaid</span>'
+            token = inv.get("invoice_token") or ""
+            from config import settings as _s
+            link_html = (
+                f'<a href="{_esc(_s.SERVER_URL)}/invoice/{_esc(token)}" target="_blank" '
+                f'style="color:#128c7e;font-size:12px">View →</a>'
+                if token else "—"
+            )
+            rows += f"""
+            <tr>
+              <td><strong>{_esc(period)}</strong></td>
+              <td>{_esc(amount)}</td>
+              <td>{sbadge}</td>
+              <td>{link_html}</td>
+            </tr>"""
+        return rows
+
+    # ── Follow-ups due soon ───────────────────────────────────────────────────
+    def _upcoming_followup_rows():
+        if not upcoming_followups:
+            return '<tr><td colspan="3" class="empty-row">No follow-ups due in the next 4 days.</td></tr>'
+        rows = ""
+        now_utc = datetime.now(timezone.utc)
+        for f in upcoming_followups:
+            appt     = f.get("appointments") or {}
+            pname    = _esc(appt.get("patient_name") or "—")
+            appt_d   = _esc(_fmt_date(appt.get("appointment_date") or ""))
+            try:
+                sched = datetime.fromisoformat(f["scheduled_at"].replace("Z", "+00:00"))
+                diff  = sched - now_utc
+                hrs   = int(diff.total_seconds() // 3600)
+                if hrs < 24:
+                    due_str = f"In {hrs}h"
+                    due_col = "#c5221f"
+                elif hrs < 48:
+                    due_str = "Tomorrow"
+                    due_col = "#92400e"
+                else:
+                    due_str = f"In {diff.days} days"
+                    due_col = "#1967d2"
+            except Exception:
+                due_str = "—"
+                due_col = "#6b7280"
+            rows += f"""
+            <tr>
+              <td><strong>{pname}</strong></td>
+              <td style="color:#6b7280;font-size:13px">{appt_d}</td>
+              <td><span style="color:{due_col};font-weight:600;font-size:13px">{_esc(due_str)}</span></td>
+            </tr>"""
+        return rows
+
+    # ── New patient intake forms ──────────────────────────────────────────────
+    def _intake_cards():
+        if not intake_rows:
+            return '<p class="empty-row" style="padding:20px;color:#9ca3af;text-align:center;font-style:italic">No intake forms collected yet.</p>'
+        cards = ""
+        for intake in intake_rows:
+            appt   = intake.get("appointments") or {}
+            pname  = _esc(appt.get("patient_name") or intake.get("patient_phone") or "Patient")
+            appt_d = _esc(_fmt_date(appt.get("appointment_date") or ""))
+            age    = _esc(str(intake.get("age") or "—"))
+            gender = _esc(intake.get("gender") or "—")
+            cc     = _esc(intake.get("chief_complaint") or "Not provided")
+            cards += f"""
+            <div style="border-bottom:1px solid #f3f4f6;padding:14px 20px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <strong style="font-size:14px">{pname}</strong>
+                <span style="font-size:12px;color:#9ca3af">{appt_d}</span>
+              </div>
+              <div style="display:flex;gap:12px;margin-bottom:6px">
+                <span style="background:#e8f0fe;color:#1967d2;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">Age: {age}</span>
+                <span style="background:#e8f0fe;color:#1967d2;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">{gender}</span>
+              </div>
+              <div style="font-size:13px;color:#374151">🩺 {cc}</div>
+            </div>"""
+        return cards
 
     def _patient_history_rows():
         if not visit_notes_history:
@@ -384,6 +631,15 @@ def render_clinic_dashboard(client: dict) -> str:
       line-height: 1.5;
     }}
 
+    /* ── Two-column card grid (trend + cancel stats) ── */
+    .two-col {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }}
+    .two-col .card {{ margin-bottom: 0; }}
+
     /* ── Search box ── */
     .search-box {{
       padding: 10px 16px 14px;
@@ -479,6 +735,105 @@ def render_clinic_dashboard(client: dict) -> str:
     </div>
   </div>
 
+  <!-- ① Follow-up tracker + ② Trend chart (side by side) -->
+  <div class="two-col">
+
+    <div class="card">
+      <div class="card-header">💬 Follow-up Responses</div>
+      <div class="card-body">
+        <table>
+          <thead><tr><th>Patient</th><th>Visit</th><th>Status</th><th>Response</th></tr></thead>
+          <tbody>{_followup_tracker_rows()}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">📈 Appointment Trend — Last 6 Months</div>
+      <div class="card-body">
+        {_trend_chart()}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ③ Cancellation stats -->
+  <div class="card">
+    <div class="card-header">❌ Cancellation &amp; Completion Stats (This Month)</div>
+    <div class="card-body">
+      {_cancel_stats_html()}
+    </div>
+  </div>
+
+  <!-- ④ Follow-ups due soon + ⑤ Waitlist (side by side) -->
+  <div class="two-col">
+
+    <div class="card">
+      <div class="card-header">🔔 Follow-ups Due Soon</div>
+      <div class="card-body">
+        <table>
+          <thead><tr><th>Patient</th><th>Visit Date</th><th>Follow-up</th></tr></thead>
+          <tbody>{_upcoming_followup_rows()}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">⏳ Waitlist Queue ({len(waitlist_rows)} waiting)</div>
+      <div class="card-body">
+        <table>
+          <thead><tr><th>Patient</th><th>Date</th><th>Slot</th><th>Waiting</th></tr></thead>
+          <tbody>{_waitlist_rows()}</tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ⑥ New patient intake forms + ⑦ Invoice history (side by side) -->
+  <div class="two-col">
+
+    <div class="card">
+      <div class="card-header">🩺 New Patient Intake Forms</div>
+      <div class="card-body">
+        {_intake_cards()}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">🧾 Invoice &amp; Billing History</div>
+      <div class="card-body">
+        <table>
+          <thead><tr><th>Period</th><th>Amount</th><th>Status</th><th>Link</th></tr></thead>
+          <tbody>{_invoice_rows()}</tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ⑧ Export to CSV -->
+  <div class="card">
+    <div class="card-header">⬇️ Export Data</div>
+    <div class="card-body" style="padding:16px 20px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <button onclick="exportTableCSV('historyTable','patient_history.csv')"
+          style="background:#128c7e;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          ⬇ Patient History CSV
+        </button>
+        <button onclick="exportTableCSV('notesTable','visit_notes.csv')" id="notesExportBtn"
+          style="background:#1967d2;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          ⬇ Visit Notes CSV
+        </button>
+        <button onclick="exportFollowupsCSV()"
+          style="background:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          ⬇ Follow-up Responses CSV
+        </button>
+      </div>
+      <p style="font-size:12px;color:#9ca3af;margin-top:10px">Exports exactly what is shown in the tables above as a .csv file you can open in Excel or Google Sheets.</p>
+    </div>
+  </div>
+
   <!-- Patient visit history (all visits, grouped by patient) -->
   <div class="card">
     <div class="card-header">📋 Patient History</div>
@@ -569,6 +924,36 @@ def render_clinic_dashboard(client: dict) -> str:
 </div><!-- /container -->
 
 <script>
+function exportTableCSV(tableId, filename) {{
+  var table = document.getElementById(tableId);
+  if (!table) {{ alert('No data to export.'); return; }}
+  var rows = Array.from(table.querySelectorAll('tr'));
+  var csv  = rows.map(function(row) {{
+    return Array.from(row.querySelectorAll('th,td')).map(function(cell) {{
+      var text = cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ').trim();
+      return '"' + text + '"';
+    }}).join(',');
+  }}).join('\n');
+  var blob = new Blob([csv], {{ type: 'text/csv' }});
+  var a    = document.createElement('a');
+  a.href   = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}}
+
+function exportFollowupsCSV() {{
+  var rows = Array.from(document.querySelectorAll('table tbody tr'));
+  // find the follow-up tracker table specifically
+  var fuTable = null;
+  document.querySelectorAll('.card').forEach(function(card) {{
+    if (card.querySelector('.card-header') && card.querySelector('.card-header').innerText.includes('Follow-up Response')) {{
+      fuTable = card.querySelector('table');
+    }}
+  }});
+  if (fuTable) {{ exportTableCSV('', 'followup_responses.csv'); }}
+  else {{ alert('No follow-up data to export.'); }}
+}}
+
 function togglePatient(id) {{
   var detail = document.getElementById('detail_' + id);
   var arrow  = document.getElementById('arrow_' + id);

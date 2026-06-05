@@ -1621,6 +1621,149 @@ def apply_referral_reward(reward_id: int) -> bool:
     return True
 
 
+def get_followup_responses(client_id: int, limit: int = 30) -> list[dict]:
+    """Recent follow-ups that have been sent, with patient response and sentiment."""
+    db_c = get_db()
+    result = (
+        db_c.table("followups")
+        .select("id, status, sent_at, patient_response, sentiment, responded_at, "
+                "appointments(patient_name, patient_phone, appointment_date, slot_time)")
+        .eq("client_id", client_id)
+        .in_("status", ["sent", "responded"])
+        .order("sent_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_monthly_appointment_counts(client_id: int, months: int = 6) -> list[dict]:
+    """
+    Return appointment counts per calendar month for the last `months` months.
+    Returns list of {month: 'Jan 2026', count: 42} ordered oldest first.
+    """
+    db_c = get_db()
+    from datetime import date
+    import calendar
+
+    today    = date.today()
+    results  = []
+    for i in range(months - 1, -1, -1):
+        # Calculate year/month i months back
+        month_num = today.month - i
+        year_adj  = today.year
+        while month_num <= 0:
+            month_num += 12
+            year_adj  -= 1
+        month_start = f"{year_adj:04d}-{month_num:02d}-01"
+        last_day    = calendar.monthrange(year_adj, month_num)[1]
+        month_end   = f"{year_adj:04d}-{month_num:02d}-{last_day:02d}"
+        month_label = date(year_adj, month_num, 1).strftime("%b %Y")
+
+        try:
+            res = (
+                db_c.table("appointments")
+                .select("id", count="exact")
+                .eq("client_id", client_id)
+                .in_("status", ["confirmed", "completed", "cancelled"])
+                .gte("appointment_date", month_start)
+                .lte("appointment_date", month_end)
+                .execute()
+            )
+            count = res.count if res.count is not None else len(res.data or [])
+        except Exception:
+            count = 0
+        results.append({"month": month_label, "count": count})
+    return results
+
+
+def get_cancellation_stats(client_id: int) -> dict:
+    """Appointment completion stats for the current calendar month."""
+    db_c = get_db()
+    today_ist   = datetime.now(_IST)
+    month_start = today_ist.strftime("%Y-%m-01")
+    today_str   = today_ist.strftime("%Y-%m-%d")
+
+    def _count(statuses: list) -> int:
+        try:
+            r = (
+                db_c.table("appointments")
+                .select("id", count="exact")
+                .eq("client_id", client_id)
+                .gte("appointment_date", month_start)
+                .lte("appointment_date", today_str)
+                .in_("status", statuses)
+                .execute()
+            )
+            return r.count if r.count is not None else len(r.data or [])
+        except Exception:
+            return 0
+
+    total     = _count(["confirmed", "completed", "cancelled"])
+    completed = _count(["completed"])
+    cancelled = _count(["cancelled"])
+    confirmed = _count(["confirmed"])
+    return {
+        "total":     total,
+        "completed": completed,
+        "cancelled": cancelled,
+        "confirmed": confirmed,
+        "cancel_rate": round(cancelled / total * 100) if total else 0,
+    }
+
+
+def get_waitlist_summary(client_id: int, limit: int = 30) -> list[dict]:
+    """Return current waitlist entries, oldest first."""
+    db_c = get_db()
+    result = (
+        db_c.table("waitlist")
+        .select("id, patient_name, patient_phone, requested_date, requested_slot, created_at")
+        .eq("client_id", client_id)
+        .order("created_at", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_upcoming_followups(client_id: int, days: int = 4) -> list[dict]:
+    """
+    Return pending follow-ups scheduled within the next `days` days.
+    Joined with appointment details for patient name.
+    """
+    db_c  = get_db()
+    now   = datetime.now(timezone.utc)
+    until = (now + timedelta(days=days)).isoformat()
+
+    result = (
+        db_c.table("followups")
+        .select("id, scheduled_at, "
+                "appointments(patient_name, patient_phone, appointment_date, slot_time)")
+        .eq("client_id", client_id)
+        .eq("status", "pending")
+        .gte("scheduled_at", now.isoformat())
+        .lte("scheduled_at", until)
+        .order("scheduled_at", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_recent_intakes(client_id: int, limit: int = 20) -> list[dict]:
+    """Return the most recent new-patient intake forms, newest first."""
+    db_c = get_db()
+    result = (
+        db_c.table("patient_intake")
+        .select("id, patient_phone, age, gender, chief_complaint, created_at, "
+                "appointments(patient_name, appointment_date)")
+        .eq("client_id", client_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
 def get_referrer_by_code(referral_code: str) -> dict | None:
     """Look up a client by their referral_code. Returns the client row or None."""
     if not referral_code:

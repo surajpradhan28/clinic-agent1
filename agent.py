@@ -1719,6 +1719,8 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
         tool_calls = choice.message.tool_calls or []
         messages.append(choice.message)
         tool_results = []
+        intake_injection: dict | None = None   # collected here, added AFTER tool_results
+
         for tc in tool_calls:
             fn_name = tc.function.name
             try:
@@ -1731,18 +1733,19 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
                 appt_row = maybe_appt
             tool_results.append({"role": "tool", "tool_call_id": tc.id, "content": fn_result})
 
-            # ── Inline intake injection ───────────────────────────────────────
-            # When create_appointment just returned is_new_patient=True,
-            # immediately inject a mandatory intake instruction so the AI
-            # asks the question in THIS reply rather than potentially missing it.
-            if fn_name == "create_appointment":
+            # ── Inline intake injection (collected, NOT appended yet) ─────────
+            # OpenAI requires tool results to immediately follow the assistant
+            # tool_calls message — injecting a system message before them causes
+            # an API error.  We collect the injection here and add it AFTER
+            # messages.extend(tool_results) below.
+            if fn_name == "create_appointment" and intake_injection is None:
                 try:
                     result_data = json.loads(fn_result)
                     if result_data.get("success") and result_data.get("is_new_patient"):
                         new_appt_id = result_data.get("appointment_id")
                         new_name    = result_data.get("patient_name", "the patient")
                         info        = _get_clinic_info(client_id)
-                        messages.append({
+                        intake_injection = {
                             "role": "system",
                             "content": (
                                 f"⚡ MANDATORY INTAKE — {new_name} is visiting {info['clinic_name']} "
@@ -1755,11 +1758,16 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
                                 f"appointment_id={new_appt_id}. "
                                 f"Do NOT skip this step."
                             ),
-                        })
+                        }
                 except Exception:
                     pass
 
+        # Tool results MUST come immediately after the assistant tool_calls message.
+        # Only after extending tool_results do we add any extra system guidance.
         messages.extend(tool_results)
+        if intake_injection:
+            messages.append(intake_injection)
+
         response = await _openai.chat.completions.create(
             model=settings.OPENAI_MODEL, messages=messages,
             tools=active_tools, tool_choice="auto",
