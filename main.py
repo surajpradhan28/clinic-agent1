@@ -973,7 +973,7 @@ async def clinic_dashboard_view(request: Request):
         raise HTTPException(status_code=403, detail="Invalid dashboard key")
 
     try:
-        html_content = clinic_dashboard.render_clinic_dashboard(client)
+        html_content = clinic_dashboard.render_clinic_dashboard(client, dashboard_key=key)
         return HTMLResponse(content=html_content)
     except Exception as exc:
         logger.error(
@@ -981,6 +981,68 @@ async def clinic_dashboard_view(request: Request):
             client.get("id"), exc, exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Dashboard error")
+
+
+@app.post("/clinic/update-info")
+async def clinic_update_info(request: Request):
+    """
+    Inline edit — update a clinic setting from the dashboard.
+    Authenticated by dashboard_key embedded in the request body.
+    Allowed fields: clinic_name, doctor_name, clinic_address, clinic_phone, google_review_link
+    """
+    try:
+        body  = await request.json()
+        key   = (body.get("key") or "").strip()
+        field = (body.get("field") or "").strip()
+        value = (body.get("value") or "").strip()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not key:
+        raise HTTPException(status_code=403, detail="Missing key")
+    client = db.get_client_by_dashboard_key(key)
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid key")
+
+    allowed = {"clinic_name", "doctor_name", "clinic_address", "clinic_phone", "google_review_link"}
+    if field not in allowed:
+        raise HTTPException(status_code=400, detail=f"Field '{field}' not editable")
+
+    db.update_clinic_setting(client["id"], field, value)
+    logger.info("[Dashboard Edit] client=%s updated %s", client["id"], field)
+    return {"success": True, "field": field, "value": value}
+
+
+@app.post("/clinic/save-notes")
+async def clinic_save_notes(request: Request):
+    """
+    Inline edit — save or update visit notes for an appointment from the dashboard.
+    Authenticated by dashboard_key.
+    """
+    try:
+        body          = await request.json()
+        key           = (body.get("key") or "").strip()
+        appointment_id = body.get("appointment_id")
+        notes         = (body.get("notes") or "").strip()
+        followup_days = int(body.get("followup_days") or 2)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not key:
+        raise HTTPException(status_code=403, detail="Missing key")
+    client = db.get_client_by_dashboard_key(key)
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid key")
+    if not appointment_id:
+        raise HTTPException(status_code=400, detail="appointment_id required")
+
+    try:
+        db.save_visit_notes(client["id"], int(appointment_id), notes, followup_days)
+        logger.info("[Dashboard Edit] client=%s saved notes for appt=%s", client["id"], appointment_id)
+        return {"success": True, "appointment_id": appointment_id}
+    except Exception as exc:
+        logger.error("[Dashboard Edit] save_notes error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/signup")

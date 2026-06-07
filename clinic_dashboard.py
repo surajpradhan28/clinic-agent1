@@ -65,10 +65,11 @@ def _esc(s) -> str:
 
 # ── HTML renderer ─────────────────────────────────────────────────────────────
 
-def render_clinic_dashboard(client: dict) -> str:
+def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
     """
     Build and return the full HTML page for a clinic's dashboard.
     All data is freshly fetched from Supabase, scoped strictly to client["id"].
+    dashboard_key is embedded in the page so JS edit calls can authenticate.
     """
     client_id   = client["id"]
     now_ist     = _ist_now()
@@ -462,24 +463,42 @@ def render_clinic_dashboard(client: dict) -> str:
 
             for v in visits:
                 notes_raw = v.get("visit_notes") or ""
-                notes_cell = (
+                appt_id   = v.get("id", "")
+                fu_days   = v.get("followup_days", 2)
+                fu_label  = f"{fu_days}d" if fu_days else "—"
+                notes_display = (
                     f'<span style="white-space:pre-wrap;font-size:13px">{_esc(notes_raw)}</span>'
                     if notes_raw
-                    else '<span style="color:#9ca3af;font-style:italic;font-size:12px">No notes added</span>'
+                    else '<span style="color:#9ca3af;font-style:italic;font-size:12px">No notes yet</span>'
                 )
-                fu_days = v.get("followup_days", 2)
-                fu_label = f"{fu_days}d" if fu_days else "—"
                 rows += f"""
-                <tr style="border-top:1px solid #f3f4f6">
+                <tr style="border-top:1px solid #f3f4f6" id="row-{appt_id}">
                   <td style="padding:9px 24px;font-size:13px">
                     {_esc(_fmt_date(v['appointment_date']))}<br>
                     <small style="color:#888">{_esc(_fmt_time(v['slot_time']))}</small>
                   </td>
                   <td style="padding:9px 16px">{_status_badge(v['status'])}</td>
-                  <td style="padding:9px 16px;max-width:280px;word-break:break-word">{notes_cell}</td>
+                  <td style="padding:9px 16px;max-width:260px;word-break:break-word">
+                    <div id="notes-view-{appt_id}">{notes_display}</div>
+                    <div id="notes-edit-{appt_id}" style="display:none;margin-top:6px">
+                      <textarea class="notes-edit-area" id="notes-inp-{appt_id}">{_esc(notes_raw)}</textarea>
+                      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+                        <label style="font-size:12px;color:#6b7280">Follow-up in
+                          <input type="number" id="fu-inp-{appt_id}" value="{fu_days}" min="0" max="365"
+                            style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin:0 4px">
+                          days</label>
+                        <button class="save-btn" onclick="saveNotes({appt_id})">Save</button>
+                        <button class="cancel-btn" onclick="cancelNotes({appt_id})">Cancel</button>
+                      </div>
+                    </div>
+                  </td>
                   <td style="padding:9px 16px;text-align:center">
-                    <span style="background:#fef3c7;color:#92400e;padding:2px 8px;
-                      border-radius:10px;font-size:11px;font-weight:600">{_esc(fu_label)}</span>
+                    <div id="fu-view-{appt_id}">
+                      <span style="background:#fef3c7;color:#92400e;padding:2px 8px;
+                        border-radius:10px;font-size:11px;font-weight:600">{_esc(fu_label)}</span>
+                    </div>
+                    <button class="edit-btn" style="margin-top:4px;margin-left:0"
+                      onclick="startNotes({appt_id})">✏️ Edit</button>
                   </td>
                 </tr>"""
             rows += '</tbody></table></td></tr>'
@@ -630,6 +649,39 @@ def render_clinic_dashboard(client: dict) -> str:
       color: #374151;
       line-height: 1.5;
     }}
+
+    /* ── Inline edit UI ── */
+    .edit-btn {{
+      background: none; border: 1px solid #e2e8f0; color: #9ca3af;
+      font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer;
+      margin-left: 8px; vertical-align: middle; transition: all .15s;
+    }}
+    .edit-btn:hover {{ border-color: #128c7e; color: #128c7e; background: #f0faf8; }}
+    .edit-row {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .edit-input {{
+      font-size: 14px; border: 1.5px solid #128c7e; border-radius: 8px;
+      padding: 4px 10px; outline: none; width: 100%; max-width: 360px;
+    }}
+    .save-btn {{
+      background: #128c7e; color: #fff; border: none; padding: 4px 12px;
+      border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }}
+    .save-btn:hover {{ background: #0f6e56; }}
+    .cancel-btn {{
+      background: none; border: 1px solid #e2e8f0; color: #6b7280;
+      padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer;
+    }}
+    .notes-edit-area {{
+      width: 100%; min-height: 80px; font-size: 13px; border: 1.5px solid #128c7e;
+      border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical;
+      font-family: inherit; margin-top: 4px;
+    }}
+    .toast {{
+      position: absolute; top: 8px; right: 8px; background: #128c7e; color: #fff;
+      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
+      opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 10;
+    }}
+    .toast.show {{ opacity: 1; }}
 
     /* ── Two-column card grid (trend + cancel stats) ── */
     .two-col {{
@@ -898,25 +950,103 @@ def render_clinic_dashboard(client: dict) -> str:
     </div>
   </div>
 
-  <!-- Clinic info + subscription -->
-  <div class="card">
+  <!-- Clinic info + subscription (editable) -->
+  <div class="card" style="position:relative">
+    <div class="toast" id="infoToast">✅ Saved!</div>
     <div class="card-header">ℹ️ Clinic Info &amp; Subscription</div>
     <div class="card-body">
       <div class="info-grid">
+
         <div class="info-item">
           <div class="info-label">Clinic Name</div>
-          <div class="info-value">{_esc(clinic_name)}</div>
+          <div class="info-value" id="val-clinic_name">
+            <div class="edit-row">
+              <span id="txt-clinic_name">{_esc(clinic_name)}</span>
+              <button class="edit-btn" onclick="startEdit('clinic_name','{_esc(clinic_name)}')">✏️ Edit</button>
+            </div>
+            <div id="form-clinic_name" style="display:none;margin-top:6px">
+              <input class="edit-input" id="inp-clinic_name" value="{_esc(clinic_name)}">
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="save-btn" onclick="saveInfo('clinic_name')">Save</button>
+                <button class="cancel-btn" onclick="cancelEdit('clinic_name')">Cancel</button>
+              </div>
+            </div>
+          </div>
         </div>
+
         <div class="info-item">
-          <div class="info-label">Doctor</div>
-          <div class="info-value">Dr. {_esc(doctor_name)}</div>
+          <div class="info-label">Doctor Name</div>
+          <div class="info-value" id="val-doctor_name">
+            <div class="edit-row">
+              <span id="txt-doctor_name">Dr. {_esc(doctor_name)}</span>
+              <button class="edit-btn" onclick="startEdit('doctor_name','{_esc(doctor_name)}')">✏️ Edit</button>
+            </div>
+            <div id="form-doctor_name" style="display:none;margin-top:6px">
+              <input class="edit-input" id="inp-doctor_name" value="{_esc(doctor_name)}">
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="save-btn" onclick="saveInfo('doctor_name')">Save</button>
+                <button class="cancel-btn" onclick="cancelEdit('doctor_name')">Cancel</button>
+              </div>
+            </div>
+          </div>
         </div>
-        {"" if not clinic_addr else f'<div class="info-item"><div class="info-label">Address</div><div class="info-value">{_esc(clinic_addr)}</div></div>'}
-        {"" if not clinic_ph else f'<div class="info-item"><div class="info-label">Phone</div><div class="info-value">{_esc(clinic_ph)}</div></div>'}
+
+        <div class="info-item">
+          <div class="info-label">Address</div>
+          <div class="info-value" id="val-clinic_address">
+            <div class="edit-row">
+              <span id="txt-clinic_address">{_esc(clinic_addr) or '<em style="color:#9ca3af">Not set</em>'}</span>
+              <button class="edit-btn" onclick="startEdit('clinic_address','{_esc(clinic_addr)}')">✏️ Edit</button>
+            </div>
+            <div id="form-clinic_address" style="display:none;margin-top:6px">
+              <input class="edit-input" id="inp-clinic_address" value="{_esc(clinic_addr)}">
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="save-btn" onclick="saveInfo('clinic_address')">Save</button>
+                <button class="cancel-btn" onclick="cancelEdit('clinic_address')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Phone</div>
+          <div class="info-value" id="val-clinic_phone">
+            <div class="edit-row">
+              <span id="txt-clinic_phone">{_esc(clinic_ph) or '<em style="color:#9ca3af">Not set</em>'}</span>
+              <button class="edit-btn" onclick="startEdit('clinic_phone','{_esc(clinic_ph)}')">✏️ Edit</button>
+            </div>
+            <div id="form-clinic_phone" style="display:none;margin-top:6px">
+              <input class="edit-input" id="inp-clinic_phone" value="{_esc(clinic_ph)}">
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="save-btn" onclick="saveInfo('clinic_phone')">Save</button>
+                <button class="cancel-btn" onclick="cancelEdit('clinic_phone')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Google Review Link</div>
+          <div class="info-value" id="val-google_review_link">
+            <div class="edit-row">
+              <span id="txt-google_review_link" style="font-size:12px;word-break:break-all">{_esc(info.get('google_review_link','')) or '<em style="color:#9ca3af">Not set</em>'}</span>
+              <button class="edit-btn" onclick="startEdit('google_review_link','{_esc(info.get('google_review_link',''))}')">✏️ Edit</button>
+            </div>
+            <div id="form-google_review_link" style="display:none;margin-top:6px">
+              <input class="edit-input" id="inp-google_review_link" value="{_esc(info.get('google_review_link',''))}">
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="save-btn" onclick="saveInfo('google_review_link')">Save</button>
+                <button class="cancel-btn" onclick="cancelEdit('google_review_link')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="info-item" style="grid-column: 1 / -1;">
           <div class="info-label">Subscription</div>
           <div class="info-value">{_sub_info()}</div>
         </div>
+
       </div>
     </div>
   </div>
@@ -924,6 +1054,85 @@ def render_clinic_dashboard(client: dict) -> str:
 </div><!-- /container -->
 
 <script>
+var DASH_KEY = "{_esc(dashboard_key)}";
+
+/* ── Toast helper ── */
+function showToast(id, msg) {{
+  var t = document.getElementById(id);
+  if (!t) return;
+  t.textContent = msg || "✅ Saved!";
+  t.classList.add("show");
+  setTimeout(function(){{ t.classList.remove("show"); }}, 2500);
+}}
+
+/* ── Clinic Info inline edit ── */
+function startEdit(field, current) {{
+  document.getElementById("form-" + field).style.display = "block";
+  document.getElementById("txt-" + field).parentElement.querySelector(".edit-btn").style.display = "none";
+  var inp = document.getElementById("inp-" + field);
+  inp.value = current;
+  inp.focus();
+}}
+function cancelEdit(field) {{
+  document.getElementById("form-" + field).style.display = "none";
+  document.getElementById("txt-" + field).parentElement.querySelector(".edit-btn").style.display = "";
+}}
+function saveInfo(field) {{
+  var value = document.getElementById("inp-" + field).value.trim();
+  fetch("/clinic/update-info", {{
+    method: "POST",
+    headers: {{ "Content-Type": "application/json" }},
+    body: JSON.stringify({{ key: DASH_KEY, field: field, value: value }})
+  }})
+  .then(function(r){{ return r.json(); }})
+  .then(function(data) {{
+    if (data.success) {{
+      var label = field === "doctor_name" ? "Dr. " + value : value;
+      document.getElementById("txt-" + field).innerHTML = label || '<em style="color:#9ca3af">Not set</em>';
+      cancelEdit(field);
+      showToast("infoToast", "✅ Saved!");
+    }} else {{
+      alert("Error: " + (data.detail || "Could not save"));
+    }}
+  }})
+  .catch(function(){{ alert("Network error — please try again."); }});
+}}
+
+/* ── Visit notes inline edit ── */
+function startNotes(apptId) {{
+  document.getElementById("notes-view-" + apptId).style.display = "none";
+  document.getElementById("notes-edit-" + apptId).style.display = "block";
+  document.getElementById("notes-inp-" + apptId).focus();
+}}
+function cancelNotes(apptId) {{
+  document.getElementById("notes-view-" + apptId).style.display = "";
+  document.getElementById("notes-edit-" + apptId).style.display = "none";
+}}
+function saveNotes(apptId) {{
+  var notes  = document.getElementById("notes-inp-" + apptId).value.trim();
+  var fuDays = parseInt(document.getElementById("fu-inp-" + apptId).value) || 2;
+  fetch("/clinic/save-notes", {{
+    method: "POST",
+    headers: {{ "Content-Type": "application/json" }},
+    body: JSON.stringify({{ key: DASH_KEY, appointment_id: apptId, notes: notes, followup_days: fuDays }})
+  }})
+  .then(function(r){{ return r.json(); }})
+  .then(function(data) {{
+    if (data.success) {{
+      var notesView = document.getElementById("notes-view-" + apptId);
+      notesView.innerHTML = notes
+        ? '<span style="white-space:pre-wrap;font-size:13px">' + notes.replace(/</g,"&lt;") + '</span>'
+        : '<span style="color:#9ca3af;font-style:italic;font-size:12px">No notes yet</span>';
+      var fuView = document.getElementById("fu-view-" + apptId);
+      fuView.innerHTML = '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">' + fuDays + 'd</span>';
+      cancelNotes(apptId);
+    }} else {{
+      alert("Error: " + (data.detail || "Could not save notes"));
+    }}
+  }})
+  .catch(function(){{ alert("Network error — please try again."); }});
+}}
+
 function exportTableCSV(tableId, filename) {{
   var table = document.getElementById(tableId);
   if (!table) {{ alert('No data to export.'); return; }}
