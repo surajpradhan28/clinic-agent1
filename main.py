@@ -1694,7 +1694,7 @@ async def signup_submit(request: Request):
             f"👨‍⚕️ {doctor_name}\n"
             f"📱 {contact_phone}\n"
             f"📍 {city}\n"
-            f"📦 Plan: {plan.title()}\n"
+            f"📦 Plan: {plan.title()} ({'Annual' if billing_cycle == 'annual' else 'Monthly'})\n"
             f"{'🔗 Referred by: ' + referred_by if referred_by else ''}\n\n"
             f"⚡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
             f"Client ID: {client_id}"
@@ -2457,22 +2457,35 @@ async def razorpay_webhook(request: Request):
     client_row = db.get_client_by_id(client_id)
     if client_row and client_row.get("status") in ("trial", "pending", "suspended"):
         plan_name = invoice.get("plan") or client_row.get("plan") or "starter"
-        plan_prices = {
+        billing_cycle = client_row.get("billing_cycle", "monthly")
+        is_annual = billing_cycle == "annual"
+        plan_prices_monthly = {
             "starter": settings.PRICE_STARTER,
             "pro":     settings.PRICE_PRO,
             "suite":   settings.PRICE_SUITE,
         }
-        monthly_price = float(plan_prices.get(plan_name, settings.PRICE_STARTER))
+        plan_prices_annual = {
+            "starter": settings.PRICE_STARTER_ANNUAL,
+            "pro":     settings.PRICE_PRO_ANNUAL,
+            "suite":   settings.PRICE_SUITE_ANNUAL,
+        }
+        plan_price = float(
+            plan_prices_annual.get(plan_name, settings.PRICE_STARTER_ANNUAL)
+            if is_annual else
+            plan_prices_monthly.get(plan_name, settings.PRICE_STARTER)
+        )
         from datetime import datetime as _dt2, timezone as _tz2, timedelta as _td2
         today_str = _dt2.now(_tz2.utc).date().isoformat()
-        end_str   = (_dt2.now(_tz2.utc) + _td2(days=30)).date().isoformat()
+        sub_days  = 365 if is_annual else 30
+        end_str   = (_dt2.now(_tz2.utc) + _td2(days=sub_days)).date().isoformat()
         try:
             db.create_subscription(
-                client_id    = client_id,
-                plan_name    = plan_name,
-                price        = monthly_price,
-                start_date   = today_str,
-                end_date     = end_str,
+                client_id     = client_id,
+                plan_name     = plan_name,
+                price         = plan_price,
+                start_date    = today_str,
+                end_date      = end_str,
+                billing_cycle = billing_cycle,
             )
             logger.info("[Razorpay] Subscription created for client %s (plan=%s, ends=%s)",
                         client_id, plan_name, end_str)

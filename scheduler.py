@@ -814,21 +814,30 @@ async def _get_or_create_trial_payment_url(client: dict, cli_settings: dict) -> 
     if cached:
         return cached
 
-    client_id = client["id"]
-    plan      = (client.get("plan") or "starter").lower()
-    plan_prices = {
+    client_id     = client["id"]
+    plan          = (client.get("plan") or "starter").lower()
+    billing_cycle = (client.get("billing_cycle") or "monthly").lower()
+    is_annual     = billing_cycle == "annual"
+
+    plan_prices_monthly = {
         "starter": settings.PRICE_STARTER,
         "pro":     settings.PRICE_PRO,
         "suite":   settings.PRICE_SUITE,
     }
-    monthly_price = float(plan_prices.get(plan, settings.PRICE_STARTER))
-    # Total = one-time setup fee + first month
-    total_amount  = float(settings.SETUP_FEE) + monthly_price
+    plan_prices_annual = {
+        "starter": settings.PRICE_STARTER_ANNUAL,
+        "pro":     settings.PRICE_PRO_ANNUAL,
+        "suite":   settings.PRICE_SUITE_ANNUAL,
+    }
+    base_price   = float(plan_prices_annual.get(plan, settings.PRICE_STARTER_ANNUAL) if is_annual
+                         else plan_prices_monthly.get(plan, settings.PRICE_STARTER))
+    total_amount = float(settings.SETUP_FEE) + base_price
+    period_days  = 365 if is_annual else 30
+    cycle_label  = f"1-year {plan.title()}" if is_annual else f"first month {plan.title()}"
 
-    now      = datetime.now(_IST)
-    # Use a special "trial" period so it doesn't clash with normal monthly invoices
+    now          = datetime.now(_IST)
     period_start = now.strftime("%Y-%m-%d")
-    period_end   = (now + timedelta(days=30)).strftime("%Y-%m-%d")
+    period_end   = (now + timedelta(days=period_days)).strftime("%Y-%m-%d")
     due_date     = (now + timedelta(days=settings.INVOICE_DUE_DAYS)).strftime("%Y-%m-%d")
 
     try:
@@ -839,7 +848,7 @@ async def _get_or_create_trial_payment_url(client: dict, cli_settings: dict) -> 
             due_date     = due_date,
             amount       = total_amount,
             plan         = plan,
-            notes        = f"One-time setup fee ₹{settings.SETUP_FEE:,} + first month {plan.title()} ₹{monthly_price:,.0f}",
+            notes        = f"One-time setup fee ₹{settings.SETUP_FEE:,} + {cycle_label} ₹{base_price:,.0f}",
         )
     except Exception as exc:
         logger.warning("[TrialAuto] Invoice creation failed for client %s: %s", client_id, exc)
