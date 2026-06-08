@@ -799,18 +799,85 @@ async def _run_upsell_nudges() -> None:
 
 # ── Job 8: Trial automation ───────────────────────────────────────────────────
 
+async def _get_or_create_trial_payment_url(client: dict, cli_settings: dict) -> str:
+    """
+    Returns a payment URL for trial-to-paid conversion.
+
+    On first call: creates an invoice (setup fee + first month) and a Razorpay
+    payment link, stores the URL in clinic_settings as 'trial_payment_url'.
+    On subsequent calls: returns the stored URL.
+
+    Falls back to the /signup page if Razorpay is not configured.
+    """
+    # Return cached URL if we already created one
+    cached = cli_settings.get("trial_payment_url", "")
+    if cached:
+        return cached
+
+    client_id = client["id"]
+    plan      = (client.get("plan") or "starter").lower()
+    plan_prices = {
+        "starter": settings.PRICE_STARTER,
+        "pro":     settings.PRICE_PRO,
+        "suite":   settings.PRICE_SUITE,
+    }
+    monthly_price = float(plan_prices.get(plan, settings.PRICE_STARTER))
+    # Total = one-time setup fee + first month
+    total_amount  = float(settings.SETUP_FEE) + monthly_price
+
+    now      = datetime.now(_IST)
+    # Use a special "trial" period so it doesn't clash with normal monthly invoices
+    period_start = now.strftime("%Y-%m-%d")
+    period_end   = (now + timedelta(days=30)).strftime("%Y-%m-%d")
+    due_date     = (now + timedelta(days=settings.INVOICE_DUE_DAYS)).strftime("%Y-%m-%d")
+
+    try:
+        invoice = db.create_invoice(
+            client_id    = client_id,
+            period_start = period_start,
+            period_end   = period_end,
+            due_date     = due_date,
+            amount       = total_amount,
+            plan         = plan,
+            notes        = f"One-time setup fee ₹{settings.SETUP_FEE:,} + first month {plan.title()} ₹{monthly_price:,.0f}",
+        )
+    except Exception as exc:
+        logger.warning("[TrialAuto] Invoice creation failed for client %s: %s", client_id, exc)
+        return f"{settings.SERVER_URL}/signup"
+
+    invoice_url = f"{settings.SERVER_URL}/invoice/{invoice['invoice_token']}"
+
+    # Try to get a Razorpay link (nicer UX — UPI / card / netbanking in one click)
+    pay_url = invoice_url  # fallback
+    try:
+        from main import _create_razorpay_link
+        client_row = db.get_client_by_id(client_id) or {}
+        rzp_url = await _create_razorpay_link(invoice, client_row)
+        if rzp_url:
+            pay_url = rzp_url
+    except Exception as exc:
+        logger.warning("[TrialAuto] Razorpay link failed for client %s: %s", client_id, exc)
+
+    # Cache the URL so we reuse it in 1-day + expiry messages
+    db.update_clinic_setting(client_id, "trial_payment_url", pay_url)
+    logger.info("[TrialAuto] Trial invoice created for client %s — amount=₹%.0f, url=%s",
+                client_id, total_amount, pay_url)
+    return pay_url
+
+
 async def _run_trial_automation() -> None:
     """
     Daily job at 8:30 AM IST (3:00 UTC).
 
     For every clinic with status='trial' (and whatsapp_phone_id set):
-      1. Welcome message  — sent once when trial is first detected (flag: trial_welcome_sent)
-      2. 3-day nudge      — sent when ≤3 days remain (flag: trial_nudge_3d_sent)
-      3. 1-day warning    — sent when ≤1 day remains (flag: trial_warning_1d_sent)
-      4. Auto-suspend     — when trial_ends_at has passed: set status='suspended',
-                            send "trial ended" message (flag: trial_ended_sent)
+      1. Welcome message    — sent once when trial is first detected (trial_welcome_sent)
+      2. 3-day nudge        — plan comparison + payment link created (trial_nudge_3d_sent)
+      3. 1-day warning      — urgency message + reuse payment link (trial_warning_1d_sent)
+      4. Auto-suspend       — trial expired → status=suspended + payment link (trial_ended_sent)
 
     State is tracked via clinic_settings keys so each message fires exactly once.
+    A Razorpay invoice for setup fee + first month is created at the 3-day mark
+    and reused in subsequent messages (stored as trial_payment_url).
     """
     logger.info("[TrialAuto] Running trial automation…")
     try:
@@ -823,8 +890,7 @@ async def _run_trial_automation() -> None:
             logger.info("[TrialAuto] No trial clients found.")
             return
 
-        now_utc     = datetime.now(timezone.utc)
-        upgrade_url = f"{settings.SERVER_URL}/signup"
+        now_utc = datetime.now(timezone.utc)
 
         for client in trial_clients:
             client_id    = client["id"]
@@ -843,6 +909,13 @@ async def _run_trial_automation() -> None:
                 or client.get("doctor_name")
                 or "Doctor"
             )
+            plan = (client.get("plan") or "starter").lower()
+            plan_prices = {
+                "starter": settings.PRICE_STARTER,
+                "pro":     settings.PRICE_PRO,
+                "suite":   settings.PRICE_SUITE,
+            }
+            monthly_price = plan_prices.get(plan, settings.PRICE_STARTER)
 
             try:
                 trial_ends = datetime.fromisoformat(
@@ -852,22 +925,29 @@ async def _run_trial_automation() -> None:
                 logger.warning("[TrialAuto] Bad trial_ends_at for client %s", client_id)
                 continue
 
-            days_left  = (trial_ends - now_utc).days   # integer days remaining (negative = expired)
+            days_left  = (trial_ends - now_utc).days
             hours_left = (trial_ends - now_utc).total_seconds() / 3600
 
             # ── Auto-suspend: trial has expired ──────────────────────────────
             if hours_left < 0:
                 if not cli_settings.get("trial_ended_sent"):
                     db.update_client_status(client_id, "suspended")
+
+                    # Get or create payment link
+                    pay_url = await _get_or_create_trial_payment_url(client, cli_settings)
+                    total   = settings.SETUP_FEE + monthly_price
+
                     msg = (
                         f"😔 Hi Dr. {doctor_name},\n\n"
                         f"Your 7-day free trial has ended and your Clinic AI Agent has been paused.\n\n"
-                        f"Don't worry — all your patient data and appointment history is safely stored. "
-                        f"You can pick up right where you left off.\n\n"
-                        f"*Reactivate in 2 minutes:*\n"
-                        f"👉 {upgrade_url}\n\n"
-                        f"Plans start at ₹{settings.PRICE_STARTER:,}/mo. "
-                        f"Reply *UPGRADE* anytime to see the options."
+                        f"Don't worry — all your patient data and appointments are safely stored. "
+                        f"You can continue right where you left off in under 2 minutes.\n\n"
+                        f"💳 *Complete your payment to reactivate:*\n"
+                        f"   Setup fee: ₹{settings.SETUP_FEE:,} (one-time)\n"
+                        f"   {plan.title()} plan: ₹{monthly_price:,}/mo\n"
+                        f"   *Total today: ₹{total:,}*\n\n"
+                        f"👉 Pay now: {pay_url}\n\n"
+                        f"Your bot will reactivate automatically once payment is confirmed. 🙏"
                     )
                     try:
                         await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
@@ -901,45 +981,61 @@ async def _run_trial_automation() -> None:
                     logger.warning("[TrialAuto] Welcome failed for client %s: %s", client_id, exc)
                 continue  # Only one message per run per client
 
-            # ── 1-day warning (checked before 3-day so it fires on day 1) ────
+            # ── 1-day warning + payment link ─────────────────────────────────
             if hours_left <= 28 and not cli_settings.get("trial_warning_1d_sent"):
                 time_desc = "today" if days_left == 0 else "tomorrow"
+                pay_url   = await _get_or_create_trial_payment_url(client, cli_settings)
+                # Refresh cli_settings after potential invoice creation
+                cli_settings = db.get_all_clinic_settings(client_id)
+                total = settings.SETUP_FEE + monthly_price
+
                 msg = (
                     f"🔔 *Last chance, Dr. {doctor_name}!*\n\n"
-                    f"Your free trial ends *{time_desc}*. After that, your clinic bot will pause.\n\n"
-                    f"Upgrade now to keep everything running without interruption:\n"
-                    f"👉 {upgrade_url}\n\n"
-                    f"Plans from ₹{settings.PRICE_STARTER:,}/mo — "
-                    f"your patient data will stay safe either way."
+                    f"Your free trial ends *{time_desc}*. After that, your clinic bot pauses.\n\n"
+                    f"💳 *Pay now to keep running without any gap:*\n"
+                    f"   Setup fee (one-time): ₹{settings.SETUP_FEE:,}\n"
+                    f"   {plan.title()} plan: ₹{monthly_price:,}/mo\n"
+                    f"   *Total: ₹{total:,}*\n\n"
+                    f"👉 {pay_url}\n\n"
+                    f"UPI / Credit card / Netbanking accepted. "
+                    f"Bot reactivates automatically on payment. 🙏"
                 )
                 try:
                     await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
                     db.update_clinic_setting(client_id, "trial_warning_1d_sent", "true")
-                    logger.info("[TrialAuto] 1-day warning sent to client %s", client_id)
+                    logger.info("[TrialAuto] 1-day warning + payment link sent to client %s", client_id)
                 except Exception as exc:
                     logger.warning("[TrialAuto] 1d warning failed for client %s: %s", client_id, exc)
                 continue
 
-            # ── 3-day nudge ──────────────────────────────────────────────────
+            # ── 3-day nudge + payment link ───────────────────────────────────
             if days_left <= 3 and not cli_settings.get("trial_nudge_3d_sent"):
                 day_str   = f"{days_left} day{'s' if days_left != 1 else ''}"
                 end_str   = trial_ends.astimezone(_IST).strftime("%-d %b")
+                pay_url   = await _get_or_create_trial_payment_url(client, cli_settings)
+                total     = settings.SETUP_FEE + monthly_price
+
                 msg = (
                     f"⏳ Dr. {doctor_name}, your free trial ends in *{day_str}* ({end_str}).\n\n"
-                    f"Upgrade before it ends to keep your clinic bot running:\n\n"
+                    f"Here's what you unlock when you subscribe:\n\n"
                     f"🟢 *Starter — ₹{settings.PRICE_STARTER:,}/mo*\n"
                     f"   AI booking + patient reminders\n\n"
                     f"🔵 *Pro — ₹{settings.PRICE_PRO:,}/mo*\n"
                     f"   + Self-cancel/reschedule + broadcast messages\n\n"
                     f"🟣 *Suite — ₹{settings.PRICE_SUITE:,}/mo*\n"
                     f"   + Custom AI notes + waitlist + intake forms\n\n"
-                    f"👉 Upgrade now → {upgrade_url}\n"
-                    f"   or reply *UPGRADE* to see the plan comparison."
+                    f"💳 *Pay now and never lose a booking:*\n"
+                    f"   Setup fee (one-time): ₹{settings.SETUP_FEE:,}\n"
+                    f"   {plan.title()} plan: ₹{monthly_price:,}/mo\n"
+                    f"   *Total today: ₹{total:,}*\n\n"
+                    f"👉 {pay_url}\n\n"
+                    f"Secure payment — UPI / Card / Netbanking. "
+                    f"Bot stays live the moment payment clears. 🚀"
                 )
                 try:
                     await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
                     db.update_clinic_setting(client_id, "trial_nudge_3d_sent", "true")
-                    logger.info("[TrialAuto] 3-day nudge sent to client %s", client_id)
+                    logger.info("[TrialAuto] 3-day nudge + payment link sent to client %s", client_id)
                 except Exception as exc:
                     logger.warning("[TrialAuto] 3d nudge failed for client %s: %s", client_id, exc)
 

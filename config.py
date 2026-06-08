@@ -91,6 +91,8 @@ class Settings:
     PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))
     PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
     PRICE_SUITE:   int = int(os.getenv("PRICE_SUITE",   "2999"))
+    # One-time setup fee charged on trial-to-paid conversion
+    SETUP_FEE:     int = int(os.getenv("SETUP_FEE",     "1499"))
 
     # ── Razorpay (UPI auto-pay) ───────────────────────────────────────────────
     # Create at https://dashboard.razorpay.com → Settings → API Keys

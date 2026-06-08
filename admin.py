@@ -1179,6 +1179,7 @@ footer{text-align:center;padding:22px;font-size:0.76rem;color:#ccc;margin-top:4p
   </div>
   <div class="header-actions">
     <button class="btn btn-light" onclick="location.reload()">&#8635; Refresh</button>
+    <a class="btn" style="background:#e3b341;color:#000;padding:8px 18px;font-size:0.86rem;text-decoration:none;border-radius:6px;font-weight:600" href="/admin/activate?key=""" + admin_key + """">⚡ Activate Pending</a>
     <button class="btn btn-new" onclick="openNewClientModal()">+ New Client</button>
   </div>
 </header>

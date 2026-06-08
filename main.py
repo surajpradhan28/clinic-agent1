@@ -897,6 +897,31 @@ async def admin_action(request: Request):
             logger.info("[Admin Action] New client created: id=%s name=%s", new["id"], body.get("name"))
             return JSONResponse({"ok": True, "client_id": new["id"]})
 
+        elif action == "activate_pending":
+            # Activate a pending clinic signup: store WA credentials, set status=trial
+            cid      = int(body["client_id"])
+            pid      = body.get("whatsapp_phone_id", "").strip()
+            tok      = body.get("whatsapp_token", "").strip()
+            plan     = body.get("plan", "starter").lower()
+            if not pid or not tok:
+                return JSONResponse({"ok": False, "error": "whatsapp_phone_id and whatsapp_token are required"}, status_code=400)
+            supabase = db.get_db()
+            # Store WA credentials + plan + set status to trial
+            supabase.table("clients").update({
+                "whatsapp_phone_id": pid,
+                "whatsapp_token":    tok,
+                "plan":              plan,
+                "status":            "trial",
+            }).eq("id", cid).execute()
+            # Ensure trial_ends_at is set (7 days from now)
+            from datetime import datetime as _dtx, timedelta as _tdx, timezone as _tzx
+            client_row = db.get_client_by_id(cid)
+            if client_row and not client_row.get("trial_ends_at"):
+                trial_end = (_dtx.now(_tzx.utc) + _tdx(days=7)).isoformat()
+                supabase.table("clients").update({"trial_ends_at": trial_end}).eq("id", cid).execute()
+            logger.info("[Admin] Activated pending client %s (pid=%s, plan=%s)", cid, pid, plan)
+            return JSONResponse({"ok": True})
+
         elif action == "razorpay_link":
             # Generate / regenerate a Razorpay payment link for an existing invoice
             invoice_token = body.get("invoice_token", "")
@@ -945,6 +970,224 @@ async def admin_action(request: Request):
     except Exception as exc:
         logger.error("[Admin Action] Error: %s", exc, exc_info=True)
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.get("/admin/pending")
+async def admin_pending_signups(request: Request):
+    """Return pending clinic signups as JSON (admin only)."""
+    key = request.query_params.get("key", "")
+    if not key or key != settings.ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    supabase = db.get_db()
+    rows = (
+        supabase.table("clients")
+        .select("id, clinic_name, doctor_name, contact_phone, contact_email, city, plan, status, created_at, trial_ends_at")
+        .eq("status", "pending")
+        .order("created_at", desc=True)
+        .execute()
+    ).data or []
+    return JSONResponse(rows)
+
+
+@app.get("/admin/activate")
+async def admin_activate_page(request: Request):
+    """
+    Admin UI for activating pending clinic signups.
+    Shows each pending clinic with an inline form to enter WhatsApp credentials.
+    Protected by ADMIN_SECRET query parameter.
+    """
+    key = request.query_params.get("key", "")
+    if not key or key != settings.ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Activate Clinics — Admin</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}}
+    nav{{background:#161b22;border-bottom:1px solid #30363d;padding:14px 24px;display:flex;align-items:center;gap:16px}}
+    nav h1{{font-size:16px;font-weight:700;color:#25D366}}
+    nav a{{color:#8b949e;font-size:13px;text-decoration:none}}
+    nav a:hover{{color:#e6edf3}}
+    .container{{max-width:900px;margin:0 auto;padding:28px 20px}}
+    .page-title{{font-size:22px;font-weight:700;margin-bottom:4px}}
+    .page-sub{{color:#8b949e;font-size:13px;margin-bottom:24px}}
+    .empty{{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:40px;text-align:center;color:#8b949e}}
+    .empty span{{font-size:32px;display:block;margin-bottom:10px}}
+    .card{{background:#161b22;border:1px solid #30363d;border-radius:10px;margin-bottom:14px;overflow:hidden}}
+    .card-header{{padding:16px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;user-select:none}}
+    .card-header:hover{{background:#1c2128}}
+    .badge-pending{{background:#2d2208;color:#e3b341;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px}}
+    .clinic-info{{flex:1}}
+    .clinic-name{{font-size:15px;font-weight:600}}
+    .clinic-meta{{font-size:12px;color:#8b949e;margin-top:3px}}
+    .chevron{{color:#8b949e;font-size:13px;transition:transform 0.2s}}
+    .chevron.open{{transform:rotate(90deg)}}
+    .card-body{{display:none;padding:20px;border-top:1px solid #30363d;background:#0d1117}}
+    .card-body.open{{display:block}}
+    .info-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-bottom:20px;font-size:13px}}
+    .info-item label{{color:#8b949e;display:block;margin-bottom:2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px}}
+    .info-item span{{color:#e6edf3}}
+    .form-title{{font-size:13px;font-weight:700;color:#25D366;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #21262d}}
+    .field{{margin-bottom:14px}}
+    .field label{{display:block;font-size:12px;color:#8b949e;margin-bottom:5px;font-weight:600}}
+    .field input, .field select{{width:100%;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:9px 12px;color:#e6edf3;font-size:13px;outline:none}}
+    .field input:focus, .field select:focus{{border-color:#25D366}}
+    .field-row{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}
+    .hint{{font-size:11px;color:#8b949e;margin-top:4px}}
+    .btn-activate{{background:#25D366;color:#000;border:none;border-radius:6px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;width:100%}}
+    .btn-activate:hover{{background:#22c55e}}
+    .btn-activate:disabled{{background:#1a3a25;color:#25D366;cursor:not-allowed}}
+    .result{{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:13px;display:none}}
+    .result.success{{background:#0d2b12;border:1px solid #25D366;color:#25D366}}
+    .result.error{{background:#3d1212;border:1px solid #f85149;color:#f85149}}
+    .plan-info{{background:#1c2128;border-radius:6px;padding:10px 14px;font-size:12px;color:#8b949e;margin-bottom:14px}}
+    .plan-info strong{{color:#e6edf3}}
+  </style>
+</head>
+<body>
+<nav>
+  <h1>⚡ Clinic Activate</h1>
+  <a href="/admin?key={key}">← Admin Dashboard</a>
+</nav>
+<div class="container">
+  <div class="page-title">Pending Signups</div>
+  <div class="page-sub" id="subtext">Loading…</div>
+  <div id="list"></div>
+</div>
+<script>
+const KEY = '{key}';
+const PLANS = {{starter:999, pro:1999, suite:2999}};
+
+async function load() {{
+  const r = await fetch('/admin/pending?key=' + KEY);
+  const clinics = await r.json();
+  const list = document.getElementById('list');
+  const sub  = document.getElementById('subtext');
+  if (!clinics.length) {{
+    sub.textContent = 'No pending signups right now.';
+    list.innerHTML = '<div class="empty"><span>🎉</span>All caught up — no pending activations.</div>';
+    return;
+  }}
+  sub.textContent = clinics.length + ' clinic(s) waiting for activation';
+  list.innerHTML = clinics.map((c, i) => `
+    <div class="card" id="card-${{c.id}}">
+      <div class="card-header" onclick="toggle(${{c.id}})">
+        <div class="badge-pending">PENDING</div>
+        <div class="clinic-info">
+          <div class="clinic-name">${{c.clinic_name || 'Unnamed Clinic'}}</div>
+          <div class="clinic-meta">Dr. ${{c.doctor_name}} &bull; ${{c.contact_phone}} &bull; ${{c.city}} &bull; Signed up ${{new Date(c.created_at).toLocaleDateString('en-IN')}}</div>
+        </div>
+        <div class="chevron" id="chev-${{c.id}}">▶</div>
+      </div>
+      <div class="card-body" id="body-${{c.id}}">
+        <div class="info-grid">
+          <div class="info-item"><label>Clinic</label><span>${{c.clinic_name}}</span></div>
+          <div class="info-item"><label>Doctor</label><span>Dr. ${{c.doctor_name}}</span></div>
+          <div class="info-item"><label>Phone</label><span>${{c.contact_phone}}</span></div>
+          <div class="info-item"><label>Email</label><span>${{c.contact_email || '—'}}</span></div>
+          <div class="info-item"><label>City</label><span>${{c.city}}</span></div>
+          <div class="info-item"><label>Requested Plan</label><span>${{c.plan || 'starter'}}</span></div>
+        </div>
+        <div class="form-title">🔧 Enter WhatsApp Business Credentials to Activate</div>
+        <div class="plan-info">
+          After activation the clinic's 7-day trial starts automatically.
+          Bot will send a welcome message within the next scheduler run (max 24h).
+        </div>
+        <div class="field">
+          <label>WhatsApp Phone Number ID <span style="color:#f85149">*</span></label>
+          <input type="text" id="pid-${{c.id}}" placeholder="e.g. 123456789012345" autocomplete="off">
+          <div class="hint">Found in Meta Business Suite → WhatsApp → API Setup → Phone number ID</div>
+        </div>
+        <div class="field">
+          <label>Permanent Access Token <span style="color:#f85149">*</span></label>
+          <input type="text" id="tok-${{c.id}}" placeholder="EAA..." autocomplete="off">
+          <div class="hint">System user permanent token from Meta Business Manager</div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Plan</label>
+            <select id="plan-${{c.id}}">
+              <option value="starter" ${{c.plan==='starter'?'selected':''}}>Starter — ₹999/mo</option>
+              <option value="pro" ${{c.plan==='pro'?'selected':''}}>Pro — ₹1,999/mo</option>
+              <option value="suite" ${{c.plan==='suite'?'selected':''}}>Suite — ₹2,999/mo</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-activate" onclick="activate(${{c.id}})">✅ Activate & Start 7-Day Trial</button>
+        <div class="result" id="res-${{c.id}}"></div>
+      </div>
+    </div>
+  `).join('');
+}}
+
+function toggle(id) {{
+  const body = document.getElementById('body-' + id);
+  const chev = document.getElementById('chev-' + id);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}}
+
+async function activate(id) {{
+  const pid  = document.getElementById('pid-'  + id).value.trim();
+  const tok  = document.getElementById('tok-'  + id).value.trim();
+  const plan = document.getElementById('plan-' + id).value;
+  const res  = document.getElementById('res-'  + id);
+  const btn  = document.querySelector('#card-' + id + ' .btn-activate');
+
+  if (!pid || !tok) {{
+    res.textContent = '⚠️ Phone Number ID and Token are required.';
+    res.className = 'result error';
+    res.style.display = 'block';
+    return;
+  }}
+
+  btn.disabled = true;
+  btn.textContent = 'Activating…';
+  res.style.display = 'none';
+
+  try {{
+    const r = await fetch('/admin/action?key=' + KEY, {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{action:'activate_pending', client_id:id, whatsapp_phone_id:pid, whatsapp_token:tok, plan}})
+    }});
+    const data = await r.json();
+    if (data.ok) {{
+      res.textContent = '✅ Activated! Trial started. Welcome message will be sent within 24h.';
+      res.className = 'result success';
+      res.style.display = 'block';
+      btn.textContent = '✅ Activated';
+      // Remove from pending list after 2s
+      setTimeout(() => {{
+        document.getElementById('card-' + id).style.opacity = '0.4';
+        document.getElementById('card-' + id).style.pointerEvents = 'none';
+      }}, 2000);
+    }} else {{
+      res.textContent = '❌ ' + (data.error || 'Unknown error');
+      res.className = 'result error';
+      res.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '✅ Activate & Start 7-Day Trial';
+    }}
+  }} catch(e) {{
+    res.textContent = '❌ Network error: ' + e.message;
+    res.className = 'result error';
+    res.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '✅ Activate & Start 7-Day Trial';
+  }}
+}}
+
+load();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.get("/clinic")
@@ -2102,10 +2345,33 @@ async def razorpay_webhook(request: Request):
         notes=f"Auto-detected via Razorpay webhook. pay_id={rzp_pay_id}",
     )
 
-    # ── Activate client if still on trial ────────────────────────────────────
+    # ── Activate client if still on trial / suspended ────────────────────────
     client_row = db.get_client_by_id(client_id)
     if client_row and client_row.get("status") in ("trial", "pending", "suspended"):
-        db.update_client_status(client_id, "active")
+        plan_name = invoice.get("plan") or client_row.get("plan") or "starter"
+        plan_prices = {
+            "starter": settings.PRICE_STARTER,
+            "pro":     settings.PRICE_PRO,
+            "suite":   settings.PRICE_SUITE,
+        }
+        monthly_price = float(plan_prices.get(plan_name, settings.PRICE_STARTER))
+        from datetime import datetime as _dt2, timezone as _tz2, timedelta as _td2
+        today_str = _dt2.now(_tz2.utc).date().isoformat()
+        end_str   = (_dt2.now(_tz2.utc) + _td2(days=30)).date().isoformat()
+        try:
+            db.create_subscription(
+                client_id    = client_id,
+                plan_name    = plan_name,
+                price        = monthly_price,
+                start_date   = today_str,
+                end_date     = end_str,
+            )
+            logger.info("[Razorpay] Subscription created for client %s (plan=%s, ends=%s)",
+                        client_id, plan_name, end_str)
+        except Exception as sub_exc:
+            # create_subscription also calls update_client_status — call it as fallback
+            logger.warning("[Razorpay] Subscription creation failed for client %s: %s — falling back to status update", client_id, sub_exc)
+            db.update_client_status(client_id, "active")
         logger.info("[Razorpay] Client %s activated after payment", client_id)
 
     # ── WhatsApp doctor: payment confirmed ────────────────────────────────────
