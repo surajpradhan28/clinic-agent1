@@ -91,6 +91,10 @@ class Settings:
     PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))
     PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
     PRICE_SUITE:   int = int(os.getenv("PRICE_SUITE",   "2999"))
+    # Annual pricing = 10 months price (pay 10, get 12 — ~17% off)
+    PRICE_STARTER_ANNUAL: int = int(os.getenv("PRICE_STARTER_ANNUAL", "9990"))
+    PRICE_PRO_ANNUAL:     int = int(os.getenv("PRICE_PRO_ANNUAL",     "19990"))
+    PRICE_SUITE_ANNUAL:   int = int(os.getenv("PRICE_SUITE_ANNUAL",   "29990"))
     # One-time setup fee charged on trial-to-paid conversion
     SETUP_FEE:     int = int(os.getenv("SETUP_FEE",     "1499"))
 
@@ -116,6 +120,13 @@ class Settings:
     # Get DSN from https://sentry.io → Your Project → Settings → Client Keys
     # Leave blank to disable Sentry (no errors will be reported).
     SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+
+    # ── Conversation history ───────────────────────────────────────────────────
+    # How many past messages to send to OpenAI per turn.
+    # Higher = better memory, slightly more tokens per request.
+    # A typical booking takes ~10 messages; keep well above that.
+    PATIENT_HISTORY_LIMIT: int = int(os.getenv("PATIENT_HISTORY_LIMIT", "20"))
+    DOCTOR_HISTORY_LIMIT:  int = int(os.getenv("DOCTOR_HISTORY_LIMIT",  "16"))
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
     FOLLOWUP_DAYS: int = 2          # days after appointment to send follow-up (default 2)

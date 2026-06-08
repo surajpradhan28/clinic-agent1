@@ -622,7 +622,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="pricing-grid">
       <div class="plan-card reveal">
         <div class="plan-name">Starter</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;¹</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual1"></div>
         <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
         <div class="plan-features">
@@ -641,7 +641,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       <div class="plan-card popular reveal">
         <div class="popular-badge">⭐ Most Popular</div>
         <div class="plan-name">Pro</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;¹</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual2"></div>
         <div class="plan-desc">Best for established clinics that want full patient self-service.</div>
         <div class="plan-features">
@@ -658,7 +658,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
       </div>
       <div class="plan-card reveal">
         <div class="plan-name">Suite</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;¹</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual3"></div>
         <div class="plan-desc">For doctors who want full automation and schedule visibility.</div>
         <div class="plan-features">
@@ -1365,6 +1365,19 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
     .plan-card ul li.no::before{{content:"✗ ";color:#ccc;}}
     .plan-card ul li.no{{color:#bbb;}}
 
+    /* Billing toggle */
+    .billing-toggle{{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:24px;}}
+    .billing-toggle span{{font-size:14px;font-weight:600;color:#64748b;}}
+    .billing-toggle span.active{{color:#1A3A5C;}}
+    .toggle-wrap{{position:relative;width:48px;height:26px;cursor:pointer;}}
+    .toggle-input{{opacity:0;width:0;height:0;position:absolute;}}
+    .toggle-slider{{position:absolute;inset:0;background:#cbd5e1;border-radius:13px;transition:.25s;}}
+    .toggle-slider:before{{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s;}}
+    .toggle-input:checked + .toggle-slider{{background:#2E75B6;}}
+    .toggle-input:checked + .toggle-slider:before{{transform:translateX(22px);}}
+    .annual-badge{{background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;}}
+    .plan-saving{{font-size:11px;color:#16a34a;font-weight:600;min-height:16px;margin-top:2px;}}
+
     /* Form */
     .form-card{{background:#fff;border-radius:16px;padding:36px 32px;
                 box-shadow:0 4px 24px rgba(0,0,0,.08);}}
@@ -1408,11 +1421,22 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
   </div>
 
   <div class="container">
+    <!-- Billing toggle -->
+    <div class="billing-toggle">
+      <span id="lbl-monthly" class="active">Monthly</span>
+      <label class="toggle-wrap">
+        <input type="checkbox" class="toggle-input" id="billingToggle" onchange="switchBilling()">
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="lbl-annual">Annual &nbsp;<span class="annual-badge">2 months FREE</span></span>
+    </div>
+
     <!-- Plan selector -->
     <div class="plans">
       <div class="plan-card {'selected' if plan=='starter' else ''}" id="card-starter" onclick="selectPlan('starter')">
         <h3>Starter</h3>
-        <div class="price">&#8377;¹999<span>/mo</span></div>
+        <div class="price" id="price-starter">&#8377;999<span id="cycle-starter">/mo</span></div>
+        <div class="plan-saving" id="saving-starter"></div>
         <ul>
           <li>AI appointment booking</li>
           <li>24-hour reminders</li>
@@ -1425,7 +1449,8 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
       <div class="plan-card {'selected' if plan=='pro' else ''}" id="card-pro" onclick="selectPlan('pro')" style="{'border-color:#2E75B6;' if plan!='suite' else ''}">
         <div class="badge">⭐ Most Popular</div>
         <h3>Pro</h3>
-        <div class="price">&#8377;¹1,999<span>/mo</span></div>
+        <div class="price" id="price-pro">&#8377;1,999<span id="cycle-pro">/mo</span></div>
+        <div class="plan-saving" id="saving-pro"></div>
         <ul>
           <li>Everything in Starter</li>
           <li>Cancel &amp; reschedule</li>
@@ -1437,7 +1462,8 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
       </div>
       <div class="plan-card {'selected' if plan=='suite' else ''}" id="card-suite" onclick="selectPlan('suite')">
         <h3>Suite</h3>
-        <div class="price">&#8377;¹2,999<span>/mo</span></div>
+        <div class="price" id="price-suite">&#8377;2,999<span id="cycle-suite">/mo</span></div>
+        <div class="plan-saving" id="saving-suite"></div>
         <ul>
           <li>Everything in Pro</li>
           <li>Daily schedule to doctor</li>
@@ -1488,10 +1514,11 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
             <label for="plan">Selected Plan *</label>
             <select id="plan" name="plan" required>
               <option value="starter" {'selected' if plan=='starter' else ''}>Starter — ₹999/month</option>
-              <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro — ₹1,999/month ·  Most Popular</option>
+              <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro — ₹1,999/month · Most Popular</option>
               <option value="suite" {'selected' if plan=='suite' else ''}>Suite — ₹2,999/month</option>
             </select>
           </div>
+          <input type="hidden" name="billing_cycle" id="billing_cycle" value="monthly">
         </div>
         <button type="submit" class="submit-btn">🚀 Start My Free 7-Day Trial</button>
         <p class="terms">By signing up you agree to our
@@ -1511,12 +1538,54 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
   </div>
 
   <script>
+    const MONTHLY = {{starter:999, pro:1999, suite:2999}};
+    const ANNUAL  = {{starter:9990, pro:19990, suite:29990}};
+    const LABELS  = {{starter:'Starter', pro:'Pro', suite:'Suite'}};
+    let isAnnual = false;
+
+    function fmt(n) {{ return n.toLocaleString('en-IN'); }}
+
+    function switchBilling() {{
+      isAnnual = document.getElementById('billingToggle').checked;
+      document.getElementById('billing_cycle').value = isAnnual ? 'annual' : 'monthly';
+      document.getElementById('lbl-monthly').classList.toggle('active', !isAnnual);
+      document.getElementById('lbl-annual').style.fontWeight = isAnnual ? '700' : '400';
+      document.getElementById('lbl-annual').style.color = isAnnual ? '#1A3A5C' : '';
+
+      ['starter','pro','suite'].forEach(p => {{
+        const prices = isAnnual ? ANNUAL : MONTHLY;
+        const cycleEl = document.getElementById('cycle-'+p);
+        const priceEl = document.getElementById('price-'+p);
+        const savEl   = document.getElementById('saving-'+p);
+        if (isAnnual) {{
+          priceEl.innerHTML = '&#8377;' + fmt(prices[p]) + '<span id="cycle-'+p+'">/yr</span>';
+          savEl.textContent = 'Save ₹' + fmt(MONTHLY[p]*2) + ' vs monthly';
+        }} else {{
+          priceEl.innerHTML = '&#8377;' + fmt(prices[p]) + '<span id="cycle-'+p+'">/mo</span>';
+          savEl.textContent = '';
+        }}
+      }});
+
+      // Update the select dropdown labels
+      const sel = document.getElementById('plan');
+      if (isAnnual) {{
+        sel.options[0].text = 'Starter — ₹9,990/year (2 months FREE)';
+        sel.options[1].text = 'Pro — ₹19,990/year (2 months FREE) · Most Popular';
+        sel.options[2].text = 'Suite — ₹29,990/year (2 months FREE)';
+      }} else {{
+        sel.options[0].text = 'Starter — ₹999/month';
+        sel.options[1].text = 'Pro — ₹1,999/month · Most Popular';
+        sel.options[2].text = 'Suite — ₹2,999/month';
+      }}
+    }}
+
     function selectPlan(plan) {{
       ['starter','pro','suite'].forEach(p => {{
         document.getElementById('card-'+p).classList.toggle('selected', p===plan);
       }});
       document.getElementById('plan').value = plan;
     }}
+
     // Pre-select Pro if nothing selected
     const sel = document.getElementById('plan').value;
     if(sel) selectPlan(sel); else selectPlan('pro');
@@ -1543,12 +1612,15 @@ async def signup_submit(request: Request):
     city          = (form.get("city")          or "").strip()
     contact_email = (form.get("contact_email") or "").strip()
     plan          = (form.get("plan")          or "pro").lower()
+    billing_cycle = (form.get("billing_cycle") or "monthly").lower()
     referred_by   = (form.get("referred_by")   or "").strip().upper()
 
     if not all([clinic_name, doctor_name, contact_phone, city]):
         raise HTTPException(status_code=400, detail="Please fill in all required fields.")
     if plan not in ("starter", "pro", "suite"):
         plan = "pro"
+    if billing_cycle not in ("monthly", "annual"):
+        billing_cycle = "monthly"
 
     # Generate a unique referral code for this new clinic
     ref_code = _secrets.token_hex(3).upper()
@@ -1583,6 +1655,7 @@ async def signup_submit(request: Request):
                 "contact_email":    contact_email or None,
                 "city":             city,
                 "plan":             plan,
+                "billing_cycle":    billing_cycle,
                 "status":           "pending",
                 "signup_source":    "web",
                 "referred_by":      referred_by or None,
@@ -2424,7 +2497,7 @@ async def razorpay_webhook(request: Request):
                 f"✅ *Payment Received —  Thank you, Dr. {doctor_name}!*\n\n"
                 f"Invoice: *{inv_num}*\n"
                 f"Plan: *{plan_label}*\n"
-                f"Amount: *&#8377;¹{amount_inr:,.0f}*\n"
+                f"Amount: *&#8377;{amount_inr:,.0f}*\n"
                 f"Payment ID: `{rzp_pay_id}`\n\n"
                 f"Your Clinic AI Agent subscription is active. "
                 f"All features are running as usual. 🙏"
@@ -2449,7 +2522,7 @@ async def razorpay_webhook(request: Request):
             except Exception:
                 pass
 
-    logger.info("[Razorpay] Invoice %s marked paid (&#8377;¹%.0f, pay_id=%s)", invoice["id"], amount_inr, rzp_pay_id)
+    logger.info("[Razorpay] Invoice %s marked paid (&#8377;%.0f, pay_id=%s)", invoice["id"], amount_inr, rzp_pay_id)
     return JSONResponse({"status": "ok"})
 
 

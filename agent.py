@@ -1616,7 +1616,7 @@ async def _get_doctor_reply(phone: str, user_text: str, client: dict) -> tuple[s
         db.save_message(client_id, phone, "assistant", reply)
         return reply, None
 
-    history   = db.get_conversation_history(client_id, phone, limit=6)
+    history   = db.get_conversation_history(client_id, phone, limit=settings.DOCTOR_HISTORY_LIMIT)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _build_doctor_prompt(client)},
         *history,
@@ -1681,7 +1681,7 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
     if _is_doctor(phone, client):
         return await _get_doctor_reply(phone, user_text, client)
 
-    history = db.get_conversation_history(client_id, phone, limit=8)
+    history = db.get_conversation_history(client_id, phone, limit=settings.PATIENT_HISTORY_LIMIT)
 
     # ── Start-of-turn intake check ────────────────────────────────────────────
     # If this patient has a recent appointment without intake collected yet,
