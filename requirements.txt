@@ -30,3 +30,6 @@ pydantic==2.9.2
 
 # Error monitoring (set SENTRY_DSN env var to enable)
 sentry-sdk[fastapi]==2.19.2
+
+# PDF generation (prescription slips)
+reportlab==4.2.5

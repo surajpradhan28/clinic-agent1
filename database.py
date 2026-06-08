@@ -478,6 +478,19 @@ def reschedule_appointment(
     return new_appt
 
 
+def get_appointment_by_id(client_id: int, appointment_id: int) -> dict | None:
+    db = get_db()
+    result = (
+        db.table("appointments")
+        .select("id, patient_name, patient_phone, appointment_date, slot_time, status")
+        .eq("client_id", client_id)
+        .eq("id", appointment_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def get_appointments_for_date(client_id: int, date: str) -> list[dict]:
     db = get_db()
     result = (

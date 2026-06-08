@@ -268,6 +268,57 @@ async def send_template_or_text(
     return True
 
 
+# ── Send document (PDF) ──────────────────────────────────────────────────────
+
+async def send_document(
+    to: str,
+    pdf_bytes: bytes,
+    filename: str,
+    caption: str = "",
+    phone_id: str | None = None,
+    token: str | None = None,
+) -> bool:
+    """
+    Upload a PDF to Meta's media API then send it as a WhatsApp document.
+    Returns True on success, False on any error.
+    """
+    pid = phone_id or settings.WHATSAPP_PHONE_ID
+    tok = token or settings.WHATSAPP_TOKEN
+    upload_url = f"{BASE_URL}/{pid}/media"
+    headers_upload = {"Authorization": f"Bearer {tok}"}
+
+    # Step 1: upload the file and get a media_id
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                upload_url,
+                headers=headers_upload,
+                files={"file": (filename, pdf_bytes, "application/pdf")},
+                data={"messaging_product": "whatsapp"},
+            )
+            if resp.status_code not in (200, 201):
+                logger.error("[WA] Media upload failed %s: %s", resp.status_code, resp.text)
+                return False
+            media_id = resp.json().get("id")
+            if not media_id:
+                logger.error("[WA] Media upload returned no id: %s", resp.text)
+                return False
+    except httpx.HTTPError as exc:
+        logger.error("[WA] Media upload HTTP error: %s", exc)
+        return False
+
+    # Step 2: send the document message
+    payload: dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "document",
+        "document": {"id": media_id, "filename": filename},
+    }
+    if caption:
+        payload["document"]["caption"] = caption
+    return await _post(payload, phone_id=phone_id, token=token)
+
+
 # ── Mark message as read ──────────────────────────────────────────────────────
 
 async def mark_as_read(

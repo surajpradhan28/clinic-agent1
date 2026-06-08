@@ -31,6 +31,131 @@ logger = logging.getLogger(__name__)
 _openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
+# ── Prescription PDF generator ────────────────────────────────────────────────
+
+def _build_prescription_pdf(
+    clinic_name: str,
+    doctor_name: str,
+    clinic_address: str,
+    patient_name: str,
+    visit_date: str,
+    notes: str,
+) -> bytes:
+    """
+    Generate a clean prescription PDF and return the raw bytes.
+    Uses reportlab; falls back to a minimal plain-text PDF if not installed.
+    """
+    try:
+        from io import BytesIO
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+        from reportlab.lib.colors import HexColor, black, white
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
+
+        GREEN  = HexColor("#075E54")
+        LIGHT  = HexColor("#f0faf8")
+        GREY   = HexColor("#555555")
+
+        styles = getSampleStyleSheet()
+        h1 = ParagraphStyle("h1", fontSize=20, textColor=white, fontName="Helvetica-Bold",
+                             alignment=TA_CENTER, spaceAfter=2)
+        sub = ParagraphStyle("sub", fontSize=10, textColor=HexColor("#c8e6e0"),
+                              fontName="Helvetica", alignment=TA_CENTER, spaceAfter=0)
+        label = ParagraphStyle("label", fontSize=9, textColor=GREY,
+                               fontName="Helvetica-Bold", spaceAfter=2)
+        body  = ParagraphStyle("body", fontSize=11, textColor=black,
+                               fontName="Helvetica", spaceAfter=6, leading=16)
+        footer_style = ParagraphStyle("footer", fontSize=8, textColor=GREY,
+                                      fontName="Helvetica", alignment=TA_CENTER)
+
+        # Format visit date nicely
+        try:
+            vd = datetime.strptime(visit_date, "%Y-%m-%d").strftime("%d %B %Y")
+        except Exception:
+            vd = visit_date
+
+        # Header table with green background
+        header_data = [[
+            Paragraph(clinic_name, h1),
+        ], [
+            Paragraph(f"{doctor_name}  ·  {clinic_address}", sub),
+        ]]
+        header_table = Table(header_data, colWidths=[17*cm])
+        header_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), GREEN),
+            ("TOPPADDING",    (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+            ("ROUNDEDCORNERS", [8]),
+        ]))
+
+        # Patient info row
+        info_data = [[
+            Paragraph("PATIENT", label),
+            Paragraph("DATE", label),
+        ], [
+            Paragraph(patient_name, body),
+            Paragraph(vd, body),
+        ]]
+        info_table = Table(info_data, colWidths=[9*cm, 8*cm])
+        info_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+            ("TOPPADDING",    (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+            ("ROUNDEDCORNERS", [6]),
+        ]))
+
+        # Notes section — split into lines for readability
+        notes_paragraphs = []
+        for line in notes.strip().split("\n"):
+            line = line.strip()
+            if line:
+                notes_paragraphs.append(Paragraph(line, body))
+            else:
+                notes_paragraphs.append(Spacer(1, 6))
+
+        story = [
+            header_table,
+            Spacer(1, 0.5*cm),
+            info_table,
+            Spacer(1, 0.4*cm),
+            HRFlowable(width="100%", thickness=1, color=HexColor("#d0e8e4")),
+            Spacer(1, 0.3*cm),
+            Paragraph("VISIT NOTES", label),
+            Spacer(1, 0.2*cm),
+            *notes_paragraphs,
+            Spacer(1, 1*cm),
+            HRFlowable(width="100%", thickness=0.5, color=HexColor("#cccccc")),
+            Spacer(1, 0.2*cm),
+            Paragraph(
+                f"This prescription was prepared by {doctor_name} · {clinic_name}. "
+                "Powered by MyWhatsApp Clinic.",
+                footer_style,
+            ),
+        ]
+
+        doc.build(story)
+        return buf.getvalue()
+
+    except ImportError:
+        logger.warning("[Prescription] reportlab not installed — skipping PDF")
+        return b""
+    except Exception as exc:
+        logger.error("[Prescription] PDF generation failed: %s", exc)
+        return b""
+
+
 # ── Slot utilities ────────────────────────────────────────────────────────────
 
 def _generate_slots_from_ranges(
@@ -742,12 +867,13 @@ async def _execute_function(
             appt = db.create_appointment(client_id, phone, patient_name, date, slot_time)
             new_patient = db.is_new_patient(client_id, phone, current_appt_id=appt["id"])
             return json.dumps({
-                "success":      True,
+                "success":        True,
                 "appointment_id": appt["id"],
-                "patient_name": patient_name,
-                "date":         date,
-                "slot_time":    slot_time,
+                "patient_name":   patient_name,
+                "date":           date,
+                "slot_time":      slot_time,
                 "is_new_patient": new_patient,
+                "can_cancel":     plan in ("pro", "suite"),
                 "message": (
                     f"Appointment confirmed for {patient_name} on {date} at {slot_time}. "
                     + ("This is a NEW patient — collect intake (age, gender, chief complaint) before saving." if new_patient else "")
@@ -1291,12 +1417,54 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
                 else "No follow-up scheduled."
             )
             saved_for = patient_name or f"appointment {appt_id}"
+
+            # ── Auto-send prescription PDF to patient ─────────────────────────
+            try:
+                appt_row = db.get_appointment_by_id(client_id, int(appt_id))
+                if appt_row:
+                    patient_phone = appt_row.get("patient_phone", "")
+                    visit_date    = (appt_row.get("appointment_date") or
+                                     datetime.now(_IST).strftime("%Y-%m-%d"))
+                    p_name        = appt_row.get("patient_name") or patient_name or "Patient"
+                    info          = _get_clinic_info(client_id)
+                    pdf_bytes     = _build_prescription_pdf(
+                        clinic_name    = info["clinic_name"],
+                        doctor_name    = info["doctor_name"],
+                        clinic_address = info["clinic_address"],
+                        patient_name   = p_name,
+                        visit_date     = visit_date,
+                        notes          = notes,
+                    )
+                    if pdf_bytes and patient_phone:
+                        safe_name = p_name.replace(" ", "_")
+                        filename  = f"Prescription_{safe_name}_{visit_date}.pdf"
+                        pid       = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
+                        tok       = client.get("whatsapp_token") or None
+                        sent = await whatsapp.send_document(
+                            to        = patient_phone,
+                            pdf_bytes = pdf_bytes,
+                            filename  = filename,
+                            caption   = (
+                                f"📋 Your visit summary from {info['clinic_name']}.\n"
+                                f"Date: {visit_date}  ·  Doctor: {info['doctor_name']}"
+                            ),
+                            phone_id  = pid,
+                            token     = tok,
+                        )
+                        if sent:
+                            logger.info("[Prescription] PDF sent to %s for appt %s", patient_phone, appt_id)
+                        else:
+                            logger.warning("[Prescription] PDF send failed for appt %s", appt_id)
+            except Exception as pdf_exc:
+                logger.warning("[Prescription] PDF flow error for appt %s: %s", appt_id, pdf_exc)
+                # Never fail the save_visit_notes call because of PDF issues
+
             return json.dumps({
                 "success":        True,
                 "appointment_id": appt_id,
                 "patient_name":   patient_name,
                 "followup_days":  followup_days,
-                "message":        f"✅ Notes saved for *{saved_for}*. {followup_msg}",
+                "message":        f"✅ Notes saved for *{saved_for}*. {followup_msg} Prescription PDF sent to patient.",
             })
         except Exception as exc:
             logger.error("save_visit_notes error: %s", exc)
@@ -1509,6 +1677,7 @@ Guidelines:
 - If check_available_slots returns total_available=0 with a weekly-off note, tell the patient the clinic is closed that day and suggest the next available date. NEVER call create_appointment on a weekly-off day even if the patient insists.
 - After the patient selects a slot, use create_appointment to confirm.
 - After booking, confirm the date, time, and clinic address. A separate confirmation card will also be sent.
+- If create_appointment returns can_cancel=true, end the confirmation with: "💡 To cancel or reschedule, just reply *CANCEL* or *RESCHEDULE* here anytime." — keep it as a single short line, never make it the focus.
 - If no slots are available, suggest nearby dates.
 - Do NOT make up appointment times — always check_available_slots first.
 - For anything medical (diagnosis, medicines, dosage), say "Please consult {doctor_name} during your appointment."
