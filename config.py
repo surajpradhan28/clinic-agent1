@@ -112,6 +112,11 @@ class Settings:
     INVOICE_BUSINESS_ADDRESS: str = os.getenv("INVOICE_BUSINESS_ADDRESS", "Mumbai, Maharashtra, India")
     INVOICE_GSTIN: str = os.getenv("INVOICE_GSTIN", "")   # leave blank if not GST-registered
 
+    # ── Error monitoring ──────────────────────────────────────────────────────
+    # Get DSN from https://sentry.io → Your Project → Settings → Client Keys
+    # Leave blank to disable Sentry (no errors will be reported).
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+
     # ── Scheduler ─────────────────────────────────────────────────────────────
     FOLLOWUP_DAYS: int = 2          # days after appointment to send follow-up (default 2)
     REMINDER_HOURS_BEFORE: int = 24  # hours before appointment to send reminder

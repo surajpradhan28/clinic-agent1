@@ -55,6 +55,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ── Sentry error monitoring (no-op if SENTRY_DSN not set) ─────────────────────
+
+def _init_sentry() -> None:
+    dsn = settings.SENTRY_DSN
+    if not dsn:
+        logger.info("[Sentry] SENTRY_DSN not set — error monitoring disabled")
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        sentry_sdk.init(
+            dsn=dsn,
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+                LoggingIntegration(
+                    level=logging.WARNING,      # capture warnings+
+                    event_level=logging.ERROR,  # send errors to Sentry
+                ),
+            ],
+            traces_sample_rate=0.1,   # 10% of requests for performance tracing
+            send_default_pii=False,   # don't send personal data (GDPR)
+            environment="production",
+        )
+        logger.info("[Sentry] Initialized — error monitoring active")
+    except ImportError:
+        logger.warning("[Sentry] sentry-sdk not installed — run: pip install sentry-sdk[fastapi]")
+    except Exception as exc:
+        logger.warning("[Sentry] Init failed: %s", exc)
+
+_init_sentry()
+
+
 # ── Razorpay client (lazy-init, only when KEY_ID is configured) ───────────────
 
 def _razorpay_client():
