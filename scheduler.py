@@ -39,6 +39,31 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 
+# ── Client validation guard ───────────────────────────────────────────────────
+
+def _valid_phone_id(client: dict) -> bool:
+    """
+    Return True only if this client has a usable WhatsApp phone_number_id.
+
+    Meta phone_number_ids are 15+ digit numeric strings.
+    A short or non-numeric value means the client was never properly onboarded —
+    skip them instead of hammering Meta with guaranteed-400 requests.
+    Falls back to the global phone_id if the client has no dedicated one set,
+    which is fine (test/dev clients use the global number).
+    """
+    pid = (client.get("whatsapp_phone_id") or "").strip()
+    if not pid:
+        return True  # will use global WHATSAPP_PHONE_ID — that's fine
+    if not pid.isdigit() or len(pid) < 10:
+        logger.warning(
+            "[Scheduler] Client %s skipped — invalid whatsapp_phone_id '%s' "
+            "(must be a 10+ digit Meta phone_number_id). Fix in DB.",
+            client.get("id"), pid,
+        )
+        return False
+    return True
+
+
 # ── Job 1: Send 7-day follow-ups ──────────────────────────────────────────────
 
 async def _run_followups() -> None:
@@ -46,6 +71,8 @@ async def _run_followups() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -122,6 +149,8 @@ async def _run_reminders() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -182,6 +211,8 @@ async def _run_1h_reminders() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -247,6 +278,8 @@ async def _run_intake_previews() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -340,6 +373,8 @@ async def _run_monthly_invoices() -> None:
         sent_count = 0
 
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -463,6 +498,8 @@ async def _run_daily_doctor_schedule() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None
@@ -716,6 +753,8 @@ async def _run_upsell_nudges() -> None:
 
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             try:
                 plan         = (client.get("plan") or "starter").lower()
                 client_id    = client["id"]
@@ -902,6 +941,8 @@ async def _run_trial_automation() -> None:
         now_utc = datetime.now(timezone.utc)
 
         for client in trial_clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             doctor_phone = client.get("contact_phone") or ""
             pid          = client.get("whatsapp_phone_id") or ""
@@ -1067,6 +1108,8 @@ async def _run_notes_reminder() -> None:
     try:
         clients = db.get_all_active_clients()
         for client in clients:
+            if not _valid_phone_id(client):
+                continue
             client_id    = client["id"]
             client_pid   = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
             client_token = client.get("whatsapp_token") or None

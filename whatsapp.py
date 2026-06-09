@@ -357,7 +357,30 @@ async def _post(
         try:
             response = await client.post(url, json=payload, headers=headers)
             if response.status_code not in (200, 201):
-                logger.error("WhatsApp API error %s: %s", response.status_code, response.text)
+                # Parse error body for smarter logging
+                try:
+                    err      = response.json().get("error", {})
+                    err_code = err.get("code")
+                    err_sub  = err.get("error_subcode")
+                except Exception:
+                    err_code = err_sub = None
+
+                if err_code == 132001:
+                    # Template not approved in Meta yet — fallback text will handle it, not a bug
+                    logger.warning(
+                        "WhatsApp template not found (132001) for pid=%s — falling back to plain text. "
+                        "Create & approve the template in Meta Business Manager to silence this.",
+                        pid,
+                    )
+                elif err_code == 100 and err_sub == 33:
+                    # phone_number_id doesn't exist in Meta — misconfigured client
+                    logger.error(
+                        "WhatsApp phone_id '%s' does not exist in Meta (100/33). "
+                        "Check this client's whatsapp_phone_id in the DB.",
+                        pid,
+                    )
+                else:
+                    logger.error("WhatsApp API error %s: %s", response.status_code, response.text)
                 return False
             return True
         except httpx.HTTPError as exc:
