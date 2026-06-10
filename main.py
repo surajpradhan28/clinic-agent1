@@ -1648,9 +1648,8 @@ async def signup_submit(request: Request):
         new_client = (
             supabase.table("clients")
             .insert({
-                "clinic_name":      clinic_name,
+                "name":             clinic_name,
                 "doctor_name":      doctor_name,
-                "contact_name":     doctor_name,
                 "contact_phone":    contact_phone,
                 "contact_email":    contact_email or None,
                 "city":             city,
