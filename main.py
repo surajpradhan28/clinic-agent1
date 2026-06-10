@@ -1684,22 +1684,40 @@ async def signup_submit(request: Request):
         raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
     # Notify admin via WhatsApp
+    admin_msg = (
+        f"🆕 *New Clinic Signup!*\n\n"
+        f"🏥 {clinic_name}\n"
+        f"👨‍⚕️ {doctor_name}\n"
+        f"📱 {contact_phone}\n"
+        f"📍 {city}\n"
+        f"📦 Plan: {plan.title()} ({'Annual' if billing_cycle == 'annual' else 'Monthly'})\n"
+        f"{'🔗 Referred by: ' + referred_by if referred_by else ''}\n\n"
+        f"⚡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
+        f"Client ID: {client_id}"
+    )
+
+    # WhatsApp notification
     if settings.ADMIN_PHONE:
-        admin_msg = (
-            f"🆕 *New Clinic Signup!*\n\n"
-            f"🏥 {clinic_name}\n"
-            f"👨‍⚕️ {doctor_name}\n"
-            f"📱 {contact_phone}\n"
-            f"📍 {city}\n"
-            f"📦 Plan: {plan.title()} ({'Annual' if billing_cycle == 'annual' else 'Monthly'})\n"
-            f"{'🔗 Referred by: ' + referred_by if referred_by else ''}\n\n"
-            f"⚡ Action needed: Set up their WhatsApp Business number and activate the account.\n"
-            f"Client ID: {client_id}"
-        )
         try:
             await whatsapp.send_text(settings.ADMIN_PHONE, admin_msg)
         except Exception:
-            pass  # Don't fail signup if admin notify fails
+            pass
+
+    # Email notification
+    if settings.ADMIN_EMAIL and settings.SMTP_USER and settings.SMTP_PASS:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            msg = MIMEText(admin_msg.replace("*", "").replace("\n", "\n"), "plain", "utf-8")
+            msg["Subject"] = f"🆕 New Signup: {clinic_name} ({plan.title()})"
+            msg["From"]    = settings.SMTP_USER
+            msg["To"]      = settings.ADMIN_EMAIL
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as smtp:
+                smtp.starttls()
+                smtp.login(settings.SMTP_USER, settings.SMTP_PASS)
+                smtp.send_message(msg)
+        except Exception as e:
+            logger.warning("[Signup] Email notify failed: %s", e)
 
     return HTMLResponse(content=_signup_success_html(clinic_name, doctor_name, plan, ref_code), status_code=200)
 

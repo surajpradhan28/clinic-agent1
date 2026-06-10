@@ -116,6 +116,14 @@ class Settings:
     INVOICE_BUSINESS_ADDRESS: str = os.getenv("INVOICE_BUSINESS_ADDRESS", "Mumbai, Maharashtra, India")
     INVOICE_GSTIN: str = os.getenv("INVOICE_GSTIN", "")   # leave blank if not GST-registered
 
+    # ── Admin email notifications ─────────────────────────────────────────────
+    # Email address to receive signup alerts (usually same as SMTP_USER)
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "")
+    SMTP_HOST:   str = os.getenv("SMTP_HOST",   "smtp.gmail.com")
+    SMTP_PORT:   int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER:   str = os.getenv("SMTP_USER",   "")
+    SMTP_PASS:   str = os.getenv("SMTP_PASS",   "")
+
     # ── Error monitoring ──────────────────────────────────────────────────────
     # Get DSN from https://sentry.io → Your Project → Settings → Client Keys
     # Leave blank to disable Sentry (no errors will be reported).
