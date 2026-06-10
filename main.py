@@ -1662,8 +1662,6 @@ async def signup_submit(request: Request):
                 "trial_started_at": now.isoformat(),
                 "trial_ends_at":    trial_ends.isoformat(),
                 "dashboard_key":    _secrets.token_urlsafe(24),
-                "whatsapp_phone_id": None,  # Admin will fill in during setup
-                "whatsapp_token":    None,
             })
             .execute()
         )
