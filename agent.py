@@ -873,7 +873,7 @@ async def _execute_function(
                 "date":           date,
                 "slot_time":      slot_time,
                 "is_new_patient": new_patient,
-                "can_cancel":     plan in ("pro", "suite"),
+                "can_cancel":     client.get("plan", "starter").lower() in ("pro", "suite"),
                 "message": (
                     f"Appointment confirmed for {patient_name} on {date} at {slot_time}. "
                     + ("This is a NEW patient — collect intake (age, gender, chief complaint) before saving." if new_patient else "")
