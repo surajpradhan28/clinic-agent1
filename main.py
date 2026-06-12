@@ -297,9 +297,32 @@ async def https_redirect(request: Request, call_next):
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
+import subprocess as _subprocess
+
+_START_TIME = time.time()
+
+def _git_commit() -> str:
+    try:
+        return _subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=_subprocess.DEVNULL,
+            cwd=str(__file__).rsplit("/", 1)[0] or ".",
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
 @app.get("/version")
-async def version_check():
-    return {"version": "v_debug_2026", "invoice_fix": "sent_at_or_fix"}
+@app.get("/health")
+async def health_check():
+    uptime_s = int(time.time() - _START_TIME)
+    h, rem = divmod(uptime_s, 3600)
+    m, s   = divmod(rem, 60)
+    return {
+        "status":  "ok",
+        "commit":  _git_commit(),
+        "uptime":  f"{h}h {m}m {s}s",
+        "version": "2.1.0",
+    }
 
 @app.get("/")
 async def landing_page():
