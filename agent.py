@@ -24,6 +24,7 @@ from openai import AsyncOpenAI
 
 import database as db
 import whatsapp
+import analytics
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -834,6 +835,7 @@ async def _execute_function(
 
         morning = [s for s in available if int(s.split(":")[0]) < 14]
         evening = [s for s in available if int(s.split(":")[0]) >= 14]
+        analytics.slot_checked(phone, client_id, date, len(available))
         return json.dumps({
             "date": date, "morning_slots": morning,
             "evening_slots": evening, "total_available": len(available),
@@ -866,6 +868,11 @@ async def _execute_function(
         try:
             appt = db.create_appointment(client_id, phone, patient_name, date, slot_time)
             new_patient = db.is_new_patient(client_id, phone, current_appt_id=appt["id"])
+            analytics.appointment_booked(
+                phone, client_id, date, slot_time,
+                plan=client.get("plan", "starter"),
+                is_new_patient=new_patient,
+            )
             return json.dumps({
                 "success":        True,
                 "appointment_id": appt["id"],
@@ -917,6 +924,7 @@ async def _execute_function(
             return json.dumps({"success": False, "error": "date and slot_time required"}), None
         try:
             db.add_to_waitlist(client_id, phone, patient_name, date, slot_time)
+            analytics.waitlist_joined(phone, client_id, date, slot_time)
             try:
                 date_display = datetime.strptime(date, "%Y-%m-%d").strftime("%d %B %Y")
             except Exception:
@@ -1026,6 +1034,10 @@ async def _execute_function(
                 except Exception as we:
                     logger.error("Waitlist auto-book error: %s", we)
 
+            analytics.appointment_cancelled(
+                phone, client_id, int(appt_id),
+                plan=client.get("plan", "starter"),
+            )
             return json.dumps({"success": True, "message": f"Appointment {appt_id} cancelled."}), None
         except Exception as exc:
             return json.dumps({"success": False, "error": str(exc)}), None
@@ -1846,6 +1858,7 @@ async def get_agent_reply(phone: str, user_text: str, client: dict) -> tuple[str
 
 async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tuple[str, dict | None]:
     client_id = client["id"]
+    analytics.message_received(phone, client_id, is_doctor=_is_doctor(phone, client))
 
     if _is_doctor(phone, client):
         return await _get_doctor_reply(phone, user_text, client)

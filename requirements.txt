@@ -33,3 +33,6 @@ sentry-sdk[fastapi]==2.19.2
 
 # PDF generation (prescription slips)
 reportlab==4.2.5
+
+# Product analytics (set POSTHOG_API_KEY env var to enable)
+posthog>=3.5.0

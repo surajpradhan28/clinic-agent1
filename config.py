@@ -129,6 +129,12 @@ class Settings:
     # Leave blank to disable Sentry (no errors will be reported).
     SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
 
+    # ── PostHog analytics ─────────────────────────────────────────────────────
+    # Get from https://app.posthog.com → Project Settings → Project API Key
+    # Leave blank to disable analytics (bot works fine without it).
+    POSTHOG_API_KEY: str = os.getenv("POSTHOG_API_KEY", "")
+    POSTHOG_HOST:    str = os.getenv("POSTHOG_HOST", "https://app.posthog.com")
+
     # ── Conversation history ───────────────────────────────────────────────────
     # How many past messages to send to OpenAI per turn.
     # Higher = better memory, slightly more tokens per request.
