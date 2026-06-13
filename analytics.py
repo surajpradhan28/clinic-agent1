@@ -21,28 +21,40 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_ph = None   # posthog client, lazily initialised
+_ph = None        # posthog client, lazily initialised
+_ph_disabled = False  # set True if init fails, so we never retry/log again
 
 def _client():
     """Lazy-init the PostHog client once."""
-    global _ph
+    global _ph, _ph_disabled
     if _ph is not None:
         return _ph
+    if _ph_disabled:
+        return None
     try:
         from config import settings
-        api_key = getattr(settings, "POSTHOG_API_KEY", "")
+        # .strip() guards against env vars containing whitespace/newlines —
+        # an unstripped blank key passes `if not api_key` but makes the
+        # posthog lib log "api_key is empty after trimming whitespace"
+        # on EVERY message (which Sentry then reports as an error).
+        api_key = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip().strip('"').strip("'")
         if not api_key:
+            _ph_disabled = True
+            logger.info("PostHog disabled (no POSTHOG_API_KEY set)")
             return None
-        import posthog as _posthog_lib
-        _posthog_lib.project_api_key = api_key
-        _posthog_lib.host           = getattr(settings, "POSTHOG_HOST", "https://app.posthog.com")
-        # Disable PostHog's own noisy logging
-        logging.getLogger("posthog").setLevel(logging.WARNING)
-        _ph = _posthog_lib
-        logger.info("PostHog analytics initialised (host=%s)", _posthog_lib.host)
+        from posthog import Posthog
+        # Quiet the lib's own logger so transient send failures
+        # never surface as Sentry errors.
+        logging.getLogger("posthog").setLevel(logging.CRITICAL)
+        _ph = Posthog(
+            project_api_key=api_key,
+            host=(getattr(settings, "POSTHOG_HOST", "") or "https://app.posthog.com").strip(),
+        )
+        logger.info("PostHog analytics initialised")
         return _ph
     except Exception as exc:
-        logger.debug("PostHog not available: %s", exc)
+        _ph_disabled = True
+        logger.warning("PostHog not available, analytics disabled: %s", exc)
         return None
 
 

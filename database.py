@@ -2158,3 +2158,53 @@ def get_patient_history_by_name_and_phone(
         .execute()
     )
     return result.data or []
+
+
+# ── Clinic statistics (doctor-mode aggregate queries) ────────────────────────
+
+def get_clinic_stats(client_id: int, period: str = "all_time") -> dict:
+    """
+    Aggregate stats for a clinic, always scoped by client_id.
+    period: today | this_week | this_month | all_time
+    """
+    db = get_db()
+    today = datetime.now(_IST).date()
+    if period == "today":
+        start = today
+    elif period == "this_week":
+        start = today - timedelta(days=today.weekday())  # Monday
+    elif period == "this_month":
+        start = today.replace(day=1)
+    else:
+        period, start = "all_time", None
+
+    q = (
+        db.table("appointments")
+        .select("patient_phone, status, appointment_date")
+        .eq("client_id", client_id)
+    )
+    if start:
+        q = q.gte("appointment_date", start.strftime("%Y-%m-%d"))
+    rows = q.execute().data or []
+
+    today_str = today.strftime("%Y-%m-%d")
+    stats = {
+        "period": period,
+        "from_date": start.strftime("%Y-%m-%d") if start else "beginning",
+        "to_date": today_str,
+        "total_appointments": len(rows),
+        "completed": sum(1 for r in rows if r.get("status") == "completed"),
+        "upcoming_confirmed": sum(
+            1 for r in rows
+            if r.get("status") == "confirmed"
+            and (r.get("appointment_date") or "") >= today_str
+        ),
+        "cancelled": sum(1 for r in rows if r.get("status") == "cancelled"),
+        "unique_patients": len({r.get("patient_phone") for r in rows if r.get("patient_phone")}),
+    }
+
+    pq = db.table("patients").select("id", count="exact").eq("client_id", client_id)
+    if start:
+        pq = pq.gte("created_at", start.strftime("%Y-%m-%d"))
+    stats["new_patients_registered"] = pq.execute().count or 0
+    return stats

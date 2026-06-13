@@ -617,13 +617,40 @@ _TOOLS_DOCTOR = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_clinic_stats",
+            "description": (
+                "Get aggregate clinic statistics for a time period: total appointments, "
+                "completed, cancelled, upcoming, unique patients, and new patient "
+                "registrations. Use whenever the doctor asks for counts or totals, e.g. "
+                "'ab tak kitne patients aaye', 'is mahine kitne appointments hue', "
+                "'pichle hafte kitne cancel hue', 'how many patients this month'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "enum": ["today", "this_week", "this_month", "all_time"],
+                        "description": (
+                            "Time period. 'ab tak' / 'total' / 'past' = all_time, "
+                            "'is hafte' = this_week, 'is mahine' = this_month."
+                        ),
+                    },
+                },
+                "required": ["period"],
+            },
+        },
+    },
 ]
 
 # ── Doctor plan-feature sets ────────────────────────────────────────────────
 _DOCTOR_STARTER_FNS: frozenset = frozenset({
     "check_available_slots", "view_appointments",
     "block_slots", "unblock_slots", "view_blocked_slots", "view_clinic_info",
-    "save_visit_notes", "view_patient_history",
+    "save_visit_notes", "view_patient_history", "get_clinic_stats",
 })
 _DOCTOR_PRO_FNS: frozenset = _DOCTOR_STARTER_FNS | frozenset({
     "update_clinic_info", "broadcast_message",
@@ -1149,6 +1176,18 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
             return json.dumps({"date": date, "count": 0, "appointments": [],
                                "message": "No confirmed appointments for this date."})
         return json.dumps({"date": date, "count": len(appointments), "appointments": appointments})
+
+    elif fn_name == "get_clinic_stats":
+        period = fn_args.get("period", "all_time")
+        if period not in ("today", "this_week", "this_month", "all_time"):
+            period = "all_time"
+        try:
+            stats = db.get_clinic_stats(client_id, period)
+            return json.dumps(stats)
+        except Exception as exc:
+            logger.error("get_clinic_stats failed for client %s: %s", client_id, exc)
+            return json.dumps({"success": False,
+                               "error": "Stats temporarily unavailable, try again."})
 
     elif fn_name == "block_slots":
         date       = fn_args.get("date", "")
