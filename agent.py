@@ -1050,6 +1050,10 @@ async def _execute_function(
                         f"📍 {info['clinic_address']}\n\n"
                         f"See you then! 🙏 Reply *cancel* if you can no longer make it."
                     )
+                    # Meta compliance: only notify if patient has opted in
+                    if not db.check_patient_optin(client_id, waiter["patient_phone"]):
+                        logger.info("[Compliance] Skipping waitlist notify to %s — no opt-in", waiter["patient_phone"])
+                        continue
                     await whatsapp.send_text(
                         waiter["patient_phone"], notify_msg,
                         phone_id=client_pid, token=client_token,
@@ -1122,6 +1126,10 @@ async def _execute_function(
                         f"📍 {info['clinic_address']}\n\n"
                         f"See you then! 🙏 Reply *cancel* if you can no longer make it."
                     )
+                    # Meta compliance: only notify if patient has opted in
+                    if not db.check_patient_optin(client_id, waiter["patient_phone"]):
+                        logger.info("[Compliance] Skipping waitlist notify to %s — no opt-in", waiter["patient_phone"])
+                        continue
                     await whatsapp.send_text(
                         waiter["patient_phone"], notify_msg,
                         phone_id=client_pid, token=client_token,
@@ -1207,6 +1215,10 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
             for appt in affected:
                 try:
                     db.cancel_appointment(appt["id"], client_id=client_id)
+                    # Meta compliance: only notify if patient has opted in
+                    if not db.check_patient_optin(client_id, appt["patient_phone"]):
+                        logger.info("[Compliance] Skipping cancellation notice to %s — no opt-in", appt["patient_phone"])
+                        continue
                     try:
                         date_display = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %d %B %Y")
                     except Exception:
@@ -1369,7 +1381,12 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
                 return json.dumps({"success": False, "message": "No registered patients found to broadcast to."})
             sent_count = 0
             failed_count = 0
+            skipped_count = 0
             for patient_phone in phones:
+                # Meta compliance: only broadcast to patients who have opted in
+                if not db.check_patient_optin(client_id, patient_phone):
+                    skipped_count += 1
+                    continue
                 try:
                     await whatsapp.send_text(patient_phone, message, phone_id=client_pid, token=client_token)
                     sent_count += 1
@@ -1377,12 +1394,15 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
                     logger.error("Broadcast failed for %s: %s", patient_phone, bc_exc)
                     failed_count += 1
             result_msg = f"✅ Broadcast sent to {sent_count} patient(s)."
+            if skipped_count:
+                result_msg += f" ⏭️ {skipped_count} skipped (no WhatsApp consent on record)."
             if failed_count:
                 result_msg += f" ⚠️ Failed for {failed_count} patient(s)."
             return json.dumps({
                 "success": True,
                 "total_patients": len(phones),
                 "sent": sent_count,
+                "skipped_no_optin": skipped_count,
                 "failed": failed_count,
                 "message": result_msg,
             })
@@ -1486,7 +1506,7 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
                         visit_date     = visit_date,
                         notes          = notes,
                     )
-                    if pdf_bytes and patient_phone:
+                    if pdf_bytes and patient_phone and db.check_patient_optin(client_id, patient_phone):
                         safe_name = p_name.replace(" ", "_")
                         filename  = f"Prescription_{safe_name}_{visit_date}.pdf"
                         pid       = client.get("whatsapp_phone_id") or settings.WHATSAPP_PHONE_ID
