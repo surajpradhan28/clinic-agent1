@@ -310,6 +310,54 @@ def get_all_patient_phones(client_id: int) -> list[str]:
     return [row["phone"] for row in (result.data or [])]
 
 
+# ── WhatsApp opt-in / opt-out (Meta compliance) ───────────────────────────────
+
+def set_patient_optin(client_id: int, phone: str, opted_in: bool) -> None:
+    """
+    Record patient WhatsApp consent.
+
+    Called when:
+      - opted_in=True  → patient sends their FIRST inbound message (implicit opt-in).
+                         Meta policy: a patient who messages you has consented to receive
+                         replies and proactive outbound messages from that number.
+      - opted_in=False → patient sends STOP / UNSUBSCRIBE.
+                         We must honour this immediately and never message them again.
+    """
+    db = get_db()
+    now = _now()
+    payload: dict[str, Any] = {
+        "client_id": client_id,
+        "phone": phone,
+        "whatsapp_optin": opted_in,
+        "updated_at": now,
+    }
+    if opted_in:
+        # Only set optin_timestamp the first time
+        existing = get_patient(client_id, phone)
+        if not existing or not existing.get("optin_timestamp"):
+            payload["optin_timestamp"] = now
+    else:
+        payload["optout_timestamp"] = now
+
+    db.table("patients").upsert(payload, on_conflict="client_id,phone").execute()
+    logger.info(
+        "[Compliance] Patient %s opt-%s for client %s",
+        phone, "IN" if opted_in else "OUT", client_id,
+    )
+
+
+def check_patient_optin(client_id: int, phone: str) -> bool:
+    """
+    Return True only if patient has explicitly opted in (whatsapp_optin=True).
+    Returns False for NULL (never messaged) or False (sent STOP).
+    Always call before sending ANY proactive outbound message.
+    """
+    patient = get_patient(client_id, phone)
+    if not patient:
+        return False
+    return patient.get("whatsapp_optin") is True
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CONVERSATIONS
 # ══════════════════════════════════════════════════════════════════════════════

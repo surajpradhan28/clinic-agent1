@@ -2776,6 +2776,33 @@ async def receive_message(request: Request):
         # ── STEP 4: Save / update patient record ──────────────────────────────
         db.upsert_patient(client_id, phone, name)
 
+        # ── STEP 4a: Meta compliance — opt-in / opt-out ───────────────────────
+        # Any inbound message = implicit opt-in (patient initiated contact).
+        # STOP / UNSUBSCRIBE = opt-out; we acknowledge and skip all future sends.
+        _text_upper = text.strip().upper()
+        if _text_upper in ("STOP", "UNSUBSCRIBE", "STOP RECEIVING MESSAGES", "OPT OUT", "OPTOUT"):
+            db.set_patient_optin(client_id, phone, opted_in=False)
+            if message_id:
+                await whatsapp.mark_as_read(message_id, phone_id=client_pid, token=client_token)
+            await whatsapp.send_text(
+                phone,
+                "You have been unsubscribed. You will no longer receive messages from this clinic.\n\n"
+                "Reply START at any time to re-subscribe. 🙏",
+                phone_id=client_pid,
+                token=client_token,
+            )
+            logger.info("[Compliance] Patient %s opted OUT for client %s", phone, client_id)
+            return JSONResponse({"status": "ok", "flow": "optout"})
+
+        if _text_upper in ("START", "SUBSCRIBE", "YES"):
+            # Explicit re-subscribe after a prior STOP
+            db.set_patient_optin(client_id, phone, opted_in=True)
+            logger.info("[Compliance] Patient %s re-opted IN for client %s", phone, client_id)
+            # Fall through to normal booking flow so they get a welcome reply
+        else:
+            # First-contact implicit opt-in: record if not already set
+            db.set_patient_optin(client_id, phone, opted_in=True)
+
         if message_id:
             await whatsapp.mark_as_read(message_id, phone_id=client_pid, token=client_token)
 

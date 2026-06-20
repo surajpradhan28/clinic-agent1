@@ -64,6 +64,27 @@ def _valid_phone_id(client: dict) -> bool:
     return True
 
 
+def _patient_opted_in(client_id: int, phone: str) -> bool:
+    """
+    Meta compliance guard — returns True only if this patient has opted in.
+
+    Called before EVERY proactive outbound message to a patient.
+    Patients who have never messaged us (optin=NULL) or who sent STOP (optin=False)
+    must NOT receive any outbound messages — even approved templates.
+
+    Note: Messages sent in direct response to a patient's own message within the
+    Meta 24-hour session window are exempt, but we guard all sends here for
+    simplicity and belt-and-suspenders compliance.
+    """
+    opted_in = db.check_patient_optin(client_id, phone)
+    if not opted_in:
+        logger.info(
+            "[Compliance] Skipping outbound to %s (client=%s) — no opt-in on record",
+            phone, client_id,
+        )
+    return opted_in
+
+
 # ── Job 1: Send 7-day follow-ups ──────────────────────────────────────────────
 
 async def _run_followups() -> None:
@@ -94,6 +115,11 @@ async def _run_followups() -> None:
                 name        = appt.get("patient_name") or "there"
                 followup_id = row["id"]
                 if not phone:
+                    continue
+
+                # ── Meta compliance: skip if patient has not opted in ─────────
+                if not _patient_opted_in(client_id, phone):
+                    db.mark_followup_sent(followup_id)  # mark sent so we don't retry
                     continue
 
                 # ── Message 1: health check ───────────────────────────────────
@@ -171,6 +197,11 @@ async def _run_reminders() -> None:
                 slot    = appt["slot_time"]
                 appt_id = appt["id"]
 
+                # ── Meta compliance: skip if patient has not opted in ─────────
+                if not _patient_opted_in(client_id, phone):
+                    db.mark_reminder_sent(appt_id)
+                    continue
+
                 try:
                     from datetime import datetime
                     date_display = datetime.strptime(appt_date, "%Y-%m-%d").strftime("%d %B %Y")
@@ -232,6 +263,11 @@ async def _run_1h_reminders() -> None:
                 appt_date = appt["appointment_date"]
                 slot      = appt["slot_time"]
                 appt_id   = appt["id"]
+
+                # ── Meta compliance: skip if patient has not opted in ─────────
+                if not _patient_opted_in(client_id, phone):
+                    db.mark_1h_reminder_sent(appt_id)
+                    continue
 
                 try:
                     from datetime import datetime as _dt
