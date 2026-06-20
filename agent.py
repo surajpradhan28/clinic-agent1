@@ -1051,13 +1051,13 @@ async def _execute_function(
                         f"See you then! 🙏 Reply *cancel* if you can no longer make it."
                     )
                     # Meta compliance: only notify if patient has opted in
-                    if not db.check_patient_optin(client_id, waiter["patient_phone"]):
+                    if db.check_patient_optin(client_id, waiter["patient_phone"]):
+                        await whatsapp.send_text(
+                            waiter["patient_phone"], notify_msg,
+                            phone_id=client_pid, token=client_token,
+                        )
+                    else:
                         logger.info("[Compliance] Skipping waitlist notify to %s — no opt-in", waiter["patient_phone"])
-                        continue
-                    await whatsapp.send_text(
-                        waiter["patient_phone"], notify_msg,
-                        phone_id=client_pid, token=client_token,
-                    )
                     logger.info(
                         "Waitlist auto-booked %s → appt %s (client=%s)",
                         waiter["patient_phone"], new_appt["id"], client_id,
@@ -1127,13 +1127,13 @@ async def _execute_function(
                         f"See you then! 🙏 Reply *cancel* if you can no longer make it."
                     )
                     # Meta compliance: only notify if patient has opted in
-                    if not db.check_patient_optin(client_id, waiter["patient_phone"]):
+                    if db.check_patient_optin(client_id, waiter["patient_phone"]):
+                        await whatsapp.send_text(
+                            waiter["patient_phone"], notify_msg,
+                            phone_id=client_pid, token=client_token,
+                        )
+                    else:
                         logger.info("[Compliance] Skipping waitlist notify to %s — no opt-in", waiter["patient_phone"])
-                        continue
-                    await whatsapp.send_text(
-                        waiter["patient_phone"], notify_msg,
-                        phone_id=client_pid, token=client_token,
-                    )
                     logger.info(
                         "Waitlist auto-booked %s → appt %s (client=%s)",
                         waiter["patient_phone"], wb_appt["id"], client_id,
