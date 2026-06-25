@@ -84,5 +84,24 @@ async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> No
         f"A reminder will be sent 24 hours before your appointment. 🙏\n\n"
         f"{footer}"
     )
+    # ── Patient confirmation ──────────────────────────────────────────────────
     await whatsapp.send_text(phone, confirmation, phone_id=client_pid, token=client_token)
-    logger.info("[Booking] Confirmation sent (client=%s, appt=%s)", client_id, appt_id)
+    logger.info("[Booking] Confirmation sent to patient (client=%s, appt=%s)", client_id, appt_id)
+
+    # ── Doctor new-booking alert ──────────────────────────────────────────────
+    doctor_phone = (client.get("contact_phone") or "").strip()
+    if doctor_phone:
+        patient_wa = f"+{phone}" if not phone.startswith("+") else phone
+        doctor_alert = (
+            f"🆕 *New Appointment Booked!*\n\n"
+            f"👤 *Patient:* {name}\n"
+            f"📱 *Phone:* {patient_wa}\n"
+            f"📅 *Date:* {date_display}\n"
+            f"⏰ *Time:* {slot}\n"
+            f"🔖 *Booking ID:* `{booking_id}`"
+        )
+        try:
+            await whatsapp.send_text(doctor_phone, doctor_alert, phone_id=client_pid, token=client_token)
+            logger.info("[Booking] Doctor notified (client=%s, appt=%s)", client_id, appt_id)
+        except Exception as e:
+            logger.error("[Booking] Doctor alert failed (client=%s): %s", client_id, e)

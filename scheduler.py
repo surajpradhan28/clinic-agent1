@@ -1272,8 +1272,16 @@ def start() -> None:
     )
     scheduler.add_job(
         _run_daily_doctor_schedule,
-        trigger=CronTrigger(hour=settings.DAILY_SCHEDULE_HOUR, minute=0),
-        id="daily_doctor_schedule", replace_existing=True, misfire_grace_time=600,
+        trigger=CronTrigger(hour=settings.DAILY_SCHEDULE_HOUR, minute=0, timezone="UTC"),
+        id="daily_doctor_schedule", replace_existing=True, misfire_grace_time=7200,
+        # misfire_grace_time=7200s (2h): if server restarts near cron time, still fires on recovery
+    )
+    # On startup: run daily schedule immediately so doctor gets today's list
+    # even if the server was down at the scheduled cron time
+    scheduler.add_job(
+        _run_daily_doctor_schedule,
+        trigger=None,  # run once immediately
+        id="daily_doctor_schedule_startup", replace_existing=True,
     )
     scheduler.add_job(
         _run_expiry_check,
