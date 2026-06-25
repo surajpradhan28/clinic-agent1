@@ -644,7 +644,13 @@ async def _run_expiry_check() -> None:
                 f"📊 Follow-up & recovery tracking\n\n"
                 f"Reply *RENEW* or contact your account manager to lock in the early offer. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_renewal_14d",
+                body_params=[doctor_name, end_date_str, early_deadline],
+                fallback_text=msg,
+                phone_id=client_pid, token=client_token,
+            )
             if success:
                 db_conn.table("subscriptions").update({"warning_14d_sent": True})\
                     .eq("id", sub["id"]).execute()
@@ -679,7 +685,13 @@ async def _run_expiry_check() -> None:
                 f"then your patients *won't be able to book* via WhatsApp.\n\n"
                 f"👉 Reply *RENEW* or contact your account manager today to keep the bot running without interruption. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_renewal_7d",
+                body_params=[doctor_name_7, str(sub["end_date"])],
+                fallback_text=msg,
+                phone_id=client_pid, token=client_token,
+            )
             if success:
                 db_conn.table("subscriptions").update({"warning_7d_sent": True})\
                     .eq("id", sub["id"]).execute()
@@ -712,7 +724,13 @@ async def _run_expiry_check() -> None:
                 f"then the bot will stop responding to patients.\n\n"
                 f"Please renew NOW. Contact support immediately. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_renewal_3d",
+                body_params=[str(sub["end_date"])],
+                fallback_text=msg,
+                phone_id=client_pid, token=client_token,
+            )
             if success:
                 db_conn.table("subscriptions").update({"warning_3d_sent": True})\
                     .eq("id", sub["id"]).execute()
@@ -760,7 +778,13 @@ async def _run_expiry_check() -> None:
                 f"Please renew before {grace_until} to keep service uninterrupted.\n"
                 f"Contact support to renew. 🙏"
             )
-            success = await whatsapp.send_text(doctor_phone, msg, phone_id=client_pid, token=client_token)
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_grace_warning",
+                body_params=[str(grace_until)],
+                fallback_text=msg,
+                phone_id=client_pid, token=client_token,
+            )
             if success:
                 db_conn.table("subscriptions").update({"grace_warning_sent": True})\
                     .eq("id", sub_row[0]["id"]).execute()
@@ -1045,7 +1069,13 @@ async def _run_trial_automation() -> None:
                         f"Your bot will reactivate automatically once payment is confirmed. 🙏"
                     )
                     try:
-                        await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                        await whatsapp.send_template_or_text(
+                            doctor_phone,
+                            template_name="clinic_trial_suspended",
+                            body_params=[doctor_name, pay_url, str(total)],
+                            fallback_text=msg,
+                            phone_id=pid, token=token,
+                        )
                     except Exception as exc:
                         logger.warning("[TrialAuto] Suspend notify failed for client %s: %s",
                                        client_id, exc)
@@ -1069,7 +1099,13 @@ async def _run_trial_automation() -> None:
                     f"Type *HELP* to see all doctor commands. Let's go! 🚀"
                 )
                 try:
-                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    await whatsapp.send_template_or_text(
+                        doctor_phone,
+                        template_name="clinic_trial_welcome",
+                        body_params=[doctor_name, trial_end_str],
+                        fallback_text=msg,
+                        phone_id=pid, token=token,
+                    )
                     db.update_clinic_setting(client_id, "trial_welcome_sent", "true")
                     logger.info("[TrialAuto] Welcome sent to client %s", client_id)
                 except Exception as exc:
@@ -1096,7 +1132,13 @@ async def _run_trial_automation() -> None:
                     f"Bot reactivates automatically on payment. 🙏"
                 )
                 try:
-                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    await whatsapp.send_template_or_text(
+                        doctor_phone,
+                        template_name="clinic_trial_warning_1d",
+                        body_params=[doctor_name, time_desc, pay_url, str(total)],
+                        fallback_text=msg,
+                        phone_id=pid, token=token,
+                    )
                     db.update_clinic_setting(client_id, "trial_warning_1d_sent", "true")
                     logger.info("[TrialAuto] 1-day warning + payment link sent to client %s", client_id)
                 except Exception as exc:
@@ -1128,7 +1170,13 @@ async def _run_trial_automation() -> None:
                     f"Bot stays live the moment payment clears. 🚀"
                 )
                 try:
-                    await whatsapp.send_text(doctor_phone, msg, phone_id=pid, token=token)
+                    await whatsapp.send_template_or_text(
+                        doctor_phone,
+                        template_name="clinic_trial_nudge_3d",
+                        body_params=[doctor_name, day_str, end_str, pay_url, str(total)],
+                        fallback_text=msg,
+                        phone_id=pid, token=token,
+                    )
                     db.update_clinic_setting(client_id, "trial_nudge_3d_sent", "true")
                     logger.info("[TrialAuto] 3-day nudge + payment link sent to client %s", client_id)
                 except Exception as exc:
@@ -1199,8 +1247,12 @@ async def _run_notes_reminder() -> None:
                 f"Notes help you track patient history and auto-schedule their follow-up. 🩺"
             )
 
-            success = await whatsapp.send_text(
-                doctor_phone, msg, phone_id=client_pid, token=client_token
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_notes_reminder",
+                body_params=[first_name, str(count), patient_list],
+                fallback_text=msg,
+                phone_id=client_pid, token=client_token,
             )
             if success:
                 logger.info(
