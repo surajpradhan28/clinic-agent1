@@ -3,731 +3,311 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WhatsApp Templates — Clinic AI Agent Setup Guide</title>
+<title>WhatsApp Templates — Meta Business Manager Approval Guide</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f0f2f5;
-    color: #1a1a2e;
-    padding: 24px 16px;
-  }
-  .page-header {
-    max-width: 860px;
-    margin: 0 auto 32px;
-  }
-  .page-header h1 {
-    font-size: 28px;
-    font-weight: 700;
-    color: #128C7E;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .page-header p {
-    margin-top: 8px;
-    color: #555;
-    font-size: 15px;
-    line-height: 1.6;
-  }
-  .steps-bar {
-    max-width: 860px;
-    margin: 0 auto 36px;
-    display: flex;
-    gap: 12px;
-    background: white;
-    border-radius: 12px;
-    padding: 20px 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  }
-  .step {
-    flex: 1;
-    text-align: center;
-    font-size: 13px;
-    color: #666;
-    line-height: 1.4;
-  }
-  .step .num {
-    display: inline-block;
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    background: #128C7E;
-    color: white;
-    font-weight: 700;
-    font-size: 14px;
-    line-height: 28px;
-    text-align: center;
-    margin-bottom: 6px;
-  }
-  .step .label { font-weight: 600; color: #333; display: block; }
-  .step-divider {
-    width: 1px; background: #e0e0e0; flex-shrink: 0; margin: 4px 0;
-  }
-  .section-label {
-    max-width: 860px;
-    margin: 0 auto 12px;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: #888;
-  }
-  .card {
-    max-width: 860px;
-    margin: 0 auto 20px;
-    background: white;
-    border-radius: 14px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    overflow: hidden;
-  }
-  .card-header {
-    padding: 18px 24px 14px;
-    border-bottom: 1px solid #f0f0f0;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .card-header-left { flex: 1; }
-  .template-name {
-    font-size: 17px;
-    font-weight: 700;
-    color: #128C7E;
-    font-family: "SFMono-Regular", Consolas, monospace;
-    margin-bottom: 4px;
-  }
-  .template-meta {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .badge {
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-  }
-  .badge-utility { background: #e8f5e9; color: #2e7d32; }
-  .badge-marketing { background: #fff3e0; color: #e65100; }
-  .badge-lang { background: #e3f2fd; color: #1565c0; }
-  .badge-trigger { background: #f3e5f5; color: #6a1b9a; }
-  .card-body { padding: 20px 24px; }
-  .preview-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: #999;
-    margin-bottom: 10px;
-  }
-  .whatsapp-bubble {
-    background: #DCF8C6;
-    border-radius: 12px 12px 12px 0;
-    padding: 14px 16px;
-    font-size: 14px;
-    line-height: 1.65;
-    color: #111;
-    max-width: 420px;
-    position: relative;
-    white-space: pre-line;
-  }
-  .whatsapp-bubble::before {
-    content: '';
-    position: absolute;
-    left: -8px;
-    bottom: 0;
-    border: 8px solid transparent;
-    border-right-color: #DCF8C6;
-    border-bottom: none;
-  }
-  .whatsapp-bubble .param {
-    background: rgba(18,140,126,0.15);
-    color: #0b6b63;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: monospace;
-    font-size: 13px;
-  }
-  .whatsapp-time {
-    text-align: right;
-    font-size: 11px;
-    color: #999;
-    margin-top: 4px;
-  }
-  .params-section {
-    margin-top: 20px;
-    padding-top: 18px;
-    border-top: 1px solid #f4f4f4;
-  }
-  .params-label {
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #aaa;
-    margin-bottom: 10px;
-  }
-  .param-row {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 8px;
-    align-items: baseline;
-    font-size: 13.5px;
-  }
-  .param-num {
-    color: white;
-    background: #128C7E;
-    border-radius: 4px;
-    padding: 2px 7px;
-    font-size: 11px;
-    font-weight: 700;
-    flex-shrink: 0;
-    font-family: monospace;
-  }
-  .param-name { font-weight: 600; color: #333; min-width: 120px; }
-  .param-example { color: #888; font-style: italic; }
-  .copy-section {
-    margin-top: 20px;
-    padding-top: 18px;
-    border-top: 1px solid #f4f4f4;
-  }
-  .copy-label {
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #aaa;
-    margin-bottom: 8px;
-  }
-  .copy-box {
-    background: #f7f9fc;
-    border: 1px solid #e0e8f0;
-    border-radius: 8px;
-    padding: 14px 16px;
-    font-family: "SFMono-Regular", Consolas, monospace;
-    font-size: 13px;
-    color: #2c3e50;
-    line-height: 1.6;
-    white-space: pre-line;
-    position: relative;
-  }
-  .copy-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: #128C7E;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 5px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-  .copy-btn:hover { background: #0a6b63; }
-  .copy-btn:active { background: #075e54; }
-  .footer-card {
-    max-width: 860px;
-    margin: 32px auto 0;
-    background: linear-gradient(135deg, #128C7E 0%, #075e54 100%);
-    border-radius: 14px;
-    padding: 28px 32px;
-    color: white;
-  }
-  .footer-card h3 { font-size: 18px; margin-bottom: 16px; }
-  .checklist { list-style: none; }
-  .checklist li {
-    padding: 5px 0;
-    font-size: 14px;
-    opacity: 0.92;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .checklist li::before { content: "✓"; font-weight: 700; font-size: 16px; }
-  .env-card {
-    max-width: 860px;
-    margin: 20px auto 0;
-    background: white;
-    border-radius: 14px;
-    padding: 24px 28px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  }
-  .env-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: #333; }
-  .env-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .env-table th {
-    text-align: left;
-    padding: 8px 12px;
-    background: #f8f8f8;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #888;
-    border-bottom: 1px solid #eee;
-  }
-  .env-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid #f4f4f4;
-    vertical-align: top;
-  }
-  .env-table tr:last-child td { border-bottom: none; }
-  .env-key {
-    font-family: monospace;
-    color: #c7254e;
-    font-size: 12.5px;
-    font-weight: 600;
-  }
-  .env-example { color: #888; font-style: italic; font-size: 12.5px; }
-  @media print {
-    body { background: white; padding: 0; }
-    .copy-btn { display: none; }
-    .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
-  }
+  body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { color: #128c7e; border-bottom: 3px solid #128c7e; padding-bottom: 10px; }
+  h2 { color: #075e54; margin-top: 40px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+  th { background: #128c7e; color: white; padding: 10px 12px; text-align: left; }
+  td { padding: 9px 12px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  tr:nth-child(even) { background: #f7fffe; }
+  .template-name { font-family: monospace; background: #e8f5e9; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .param { font-family: monospace; color: #d32f2f; font-size: 12px; }
+  .body-text { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+  .utility { background: #e3f2fd; color: #0d47a1; }
+  .marketing { background: #fff3e0; color: #e65100; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+  code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 </style>
 </head>
 <body>
 
-<div class="page-header">
-  <h1>💬 WhatsApp Templates Setup Guide</h1>
-  <p>Copy these 6 templates into <strong>Meta Business Manager → WhatsApp → Message Templates</strong>.
-  Once approved (~24–48h), proactive reminders and invoices will deliver reliably to patients
-  regardless of the 24-hour session window.</p>
-</div>
+<h1>📋 WhatsApp Templates — Meta Business Manager Approval Guide</h1>
+<p>All templates below must be submitted in <strong>Meta Business Manager → WhatsApp Manager → Message Templates</strong>.
+Templates in <span class="badge utility">UTILITY</span> category have the highest approval rate and lowest per-message cost.
+Once approved, <code>send_template_or_text()</code> in the codebase uses the template automatically.</p>
 
-<!-- Steps -->
-<div class="steps-bar">
-  <div class="step">
-    <div class="num">1</div>
-    <span class="label">Open Meta BM</span>
-    business.facebook.com
-  </div>
-  <div class="step-divider"></div>
-  <div class="step">
-    <div class="num">2</div>
-    <span class="label">Go to Templates</span>
-    WhatsApp → Message Templates
-  </div>
-  <div class="step-divider"></div>
-  <div class="step">
-    <div class="num">3</div>
-    <span class="label">Create Template</span>
-    Paste body text below
-  </div>
-  <div class="step-divider"></div>
-  <div class="step">
-    <div class="num">4</div>
-    <span class="label">Submit for Review</span>
-    Approved in 24–48h
-  </div>
-  <div class="step-divider"></div>
-  <div class="step">
-    <div class="num">5</div>
-    <span class="label">Go Live</span>
-    Status → Active ✓
-  </div>
-</div>
-
-<!-- ── Template 1 ─────────────────────────────────────────── -->
-<div class="section-label">Template 1 of 6 — Appointment Reminders</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_appt_reminder_24h</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: 24h before appointment</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview</div>
-    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 👋
-
-Your appointment at <span class="param">{{2}}</span> is confirmed for *<span class="param">{{3}}</span>* at *<span class="param">{{4}}</span>*.
-
-📍 <span class="param">{{5}}</span>
-
-Please arrive 5 minutes early. Reply *CANCEL* to cancel.
-    <div class="whatsapp-time">✓✓ 10:00 AM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Priya"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
-      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "26 May 2025"</span></div>
-      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "10:30 AM"</span></div>
-      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t1">Hi {{1}} 👋
-
-Your appointment at {{2}} is confirmed for *{{3}}* at *{{4}}*.
-
-📍 {{5}}
-
-Please arrive 5 minutes early. Reply *CANCEL* to cancel.<button class="copy-btn" onclick="copyText('t1', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── Template 2 ─────────────────────────────────────────── -->
-<div class="section-label">Template 2 of 6 — Appointment Reminders</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_appt_reminder_1h</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: 1h before appointment</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview</div>
-    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> ⏰
-
-Friendly reminder — your appointment at *<span class="param">{{2}}</span>* is in *1 hour* (<span class="param">{{3}}</span> at <span class="param">{{4}}</span>).
-
-📍 <span class="param">{{5}}</span>
-
-See you soon!
-    <div class="whatsapp-time">✓✓ 9:00 AM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Rahul"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
-      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "26 May 2025"</span></div>
-      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "10:00 AM"</span></div>
-      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t2">Hi {{1}} ⏰
-
-Friendly reminder — your appointment at *{{2}}* is in *1 hour* ({{3}} at {{4}}).
-
-📍 {{5}}
-
-See you soon!<button class="copy-btn" onclick="copyText('t2', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── Template 3 ─────────────────────────────────────────── -->
-<div class="section-label">Template 3 of 6 — Post-Visit Follow-Up</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_followup_checkup</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: 2 days after appointment</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview</div>
-    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 🙏
-
-Hope you're feeling better! Dr. <span class="param">{{2}}</span> wanted to check in after your recent visit.
-
-If you have any questions about your treatment or need to book a follow-up, just reply here and we'll help you right away.
-
-Take care! 💊
-    <div class="whatsapp-time">✓✓ 11:00 AM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Anita"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Doctor name</span><span class="param-example">e.g. "Sharma"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t3">Hi {{1}} 🙏
-
-Hope you're feeling better! Dr. {{2}} wanted to check in after your recent visit.
-
-If you have any questions about your treatment or need to book a follow-up, just reply here and we'll help you right away.
-
-Take care! 💊<button class="copy-btn" onclick="copyText('t3', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── Template 4 ─────────────────────────────────────────── -->
-<div class="section-label">Template 4 of 6 — Billing & Invoices</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_invoice_monthly</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: 1st of every month (8:30 AM IST)</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview</div>
-    <div class="whatsapp-bubble">Hi <span class="param">{{1}}</span> 👋
-
-Your invoice *#<span class="param">{{2}}</span>* for ₹<span class="param">{{3}}</span> is ready.
-
-📅 Due date: *<span class="param">{{4}}</span>*
-
-View & pay online 👇
-<span class="param">{{5}}</span>
-
-Thank you for using Clinic AI Agent! 🙏
-    <div class="whatsapp-time">✓✓ 8:30 AM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Invoice number</span><span class="param-example">e.g. "INV-2025-001"</span></div>
-      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Amount</span><span class="param-example">e.g. "999"</span></div>
-      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Due date</span><span class="param-example">e.g. "05 Jun 2025"</span></div>
-      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Invoice URL</span><span class="param-example">e.g. "https://yourdomain.com/invoice/abc123"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t4">Hi {{1}} 👋
-
-Your invoice *#{{2}}* for ₹{{3}} is ready.
-
-📅 Due date: *{{4}}*
-
-View & pay online 👇
-{{5}}
-
-Thank you for using Clinic AI Agent! 🙏<button class="copy-btn" onclick="copyText('t4', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── Template 5 ─────────────────────────────────────────── -->
-<div class="section-label">Template 5 of 6 — Waitlist</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_waitlist_booked</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: Slot opens from cancellation</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview</div>
-    <div class="whatsapp-bubble">Great news, <span class="param">{{1}}</span>! 🎉
-
-A slot just opened up at *<span class="param">{{2}}</span>* and we've automatically booked it for you.
-
-📅 *<span class="param">{{3}}</span>* at *<span class="param">{{4}}</span>*
-📍 <span class="param">{{5}}</span>
-
-See you there! Reply *CANCEL* if you can't make it.
-    <div class="whatsapp-time">✓✓ 3:45 PM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Vikram"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Clinic name</span><span class="param-example">e.g. "City Heart Clinic"</span></div>
-      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Date</span><span class="param-example">e.g. "27 May 2025"</span></div>
-      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Time slot</span><span class="param-example">e.g. "11:00 AM"</span></div>
-      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Clinic address</span><span class="param-example">e.g. "MG Road, Bengaluru"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t5">Great news, {{1}}! 🎉
-
-A slot just opened up at *{{2}}* and we've automatically booked it for you.
-
-📅 *{{3}}* at *{{4}}*
-📍 {{5}}
-
-See you there! Reply *CANCEL* if you can't make it.<button class="copy-btn" onclick="copyText('t5', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── Template 6 ─────────────────────────────────────────── -->
-<div class="section-label">Template 6 of 6 — New Patient Intake</div>
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-left">
-      <div class="template-name">clinic_intake_preview</div>
-      <div class="template-meta">
-        <span class="badge badge-utility">Utility</span>
-        <span class="badge badge-lang">English</span>
-        <span class="badge badge-trigger">Trigger: 30 min before new patient appointment (to doctor)</span>
-      </div>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="preview-label">Preview (sent to the clinic/doctor's WhatsApp)</div>
-    <div class="whatsapp-bubble">🩺 *New Patient Intake — <span class="param">{{1}}</span>*
-
-Appointment in 30 minutes.
-
-👤 Patient: <span class="param">{{2}}</span>
-📞 Phone: <span class="param">{{3}}</span>
-🎂 Age: <span class="param">{{4}}</span>
-⚧ Gender: <span class="param">{{5}}</span>
-📋 Chief Complaint: <span class="param">{{6}}</span>
-    <div class="whatsapp-time">✓✓ 9:30 AM</div></div>
-
-    <div class="params-section">
-      <div class="params-label">Parameters (in order)</div>
-      <div class="param-row"><span class="param-num">{{1}}</span><span class="param-name">Slot time</span><span class="param-example">e.g. "10:00 AM"</span></div>
-      <div class="param-row"><span class="param-num">{{2}}</span><span class="param-name">Patient name</span><span class="param-example">e.g. "Anjali Mehta"</span></div>
-      <div class="param-row"><span class="param-num">{{3}}</span><span class="param-name">Patient phone</span><span class="param-example">e.g. "919876543210"</span></div>
-      <div class="param-row"><span class="param-num">{{4}}</span><span class="param-name">Age</span><span class="param-example">e.g. "34"</span></div>
-      <div class="param-row"><span class="param-num">{{5}}</span><span class="param-name">Gender</span><span class="param-example">e.g. "Female"</span></div>
-      <div class="param-row"><span class="param-num">{{6}}</span><span class="param-name">Chief complaint</span><span class="param-example">e.g. "Chest pain since 2 days"</span></div>
-    </div>
-
-    <div class="copy-section">
-      <div class="copy-label">Body text to paste in Meta BM</div>
-      <div class="copy-box" id="t6">🩺 *New Patient Intake — {{1}}*
-
-Appointment in 30 minutes.
-
-👤 Patient: {{2}}
-📞 Phone: {{3}}
-🎂 Age: {{4}}
-⚧ Gender: {{5}}
-📋 Chief Complaint: {{6}}<button class="copy-btn" onclick="copyText('t6', this)">Copy</button></div>
-    </div>
-  </div>
-</div>
-
-<!-- Railway Env Vars -->
-<div class="env-card">
-  <h3>🚂 New Railway Environment Variables</h3>
-  <table class="env-table">
-    <thead>
-      <tr><th>Variable</th><th>Example Value</th><th>Purpose</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><span class="env-key">SERVER_URL</span></td>
-        <td><span class="env-example">https://clinic-agent-production.up.railway.app</span></td>
-        <td>Used in invoice URLs sent via WhatsApp</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">INVOICE_UPI_ID</span></td>
-        <td><span class="env-example">yourname@upi</span></td>
-        <td>Shown on invoice for UPI payment</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">INVOICE_BUSINESS_NAME</span></td>
-        <td><span class="env-example">Clinic AI Agent Services</span></td>
-        <td>Invoice header business name</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">INVOICE_BUSINESS_ADDRESS</span></td>
-        <td><span class="env-example">Mumbai, Maharashtra, India</span></td>
-        <td>Invoice header address</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">INVOICE_GSTIN</span></td>
-        <td><span class="env-example">27AABCS1429B1Z1</span></td>
-        <td>GSTIN (leave blank to hide)</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">PRICE_STARTER</span></td>
-        <td><span class="env-example">999</span></td>
-        <td>Monthly price for Starter plan (₹)</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">PRICE_PRO</span></td>
-        <td><span class="env-example">1999</span></td>
-        <td>Monthly price for Pro plan (₹)</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">PRICE_SUITE</span></td>
-        <td><span class="env-example">2999</span></td>
-        <td>Monthly price for Suite plan (₹)</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Supabase SQL reminder -->
-<div class="env-card" style="margin-top:16px;">
-  <h3>🗄️ Supabase SQL — Run These in Order</h3>
-  <table class="env-table">
-    <thead>
-      <tr><th>File</th><th>What It Does</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><span class="env-key">schema_v9_waitlist_intake.sql</span></td>
-        <td>waitlist + patient_intake tables, intake_preview_sent column</td>
-        <td style="color:#e65100;">⏳ Pending</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">schema_v10_invoices.sql</span></td>
-        <td>invoices table with UUID token for secure URLs</td>
-        <td style="color:#e65100;">⏳ Pending</td>
-      </tr>
-      <tr>
-        <td><span class="env-key">schema_v11_trial_signup.sql</span></td>
-        <td>trial columns, signups log table, referral codes backfill</td>
-        <td style="color:#e65100;">⏳ Pending</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Checklist footer -->
-<div class="footer-card">
-  <h3>✅ Deployment Checklist</h3>
-  <ul class="checklist">
-    <li>Create all 6 templates in Meta Business Manager (category: Utility for all)</li>
-    <li>Submit templates for review — typically approved within 24–48 hours</li>
-    <li>Set 8 new Railway environment variables listed above</li>
-    <li>Run 3 SQL schema files in Supabase SQL Editor (in order v9 → v10 → v11)</li>
-    <li>Push latest code to GitHub (git push — need fresh personal access token)</li>
-    <li>Railway auto-deploys on push — watch logs for startup errors</li>
-    <li>Test /signup page at your Railway URL: https://…/signup</li>
-    <li>Test a reminder by booking an appointment 2 minutes from now and checking scheduler logs</li>
+<div class="note">
+  <strong>⚠️ Submission tips:</strong>
+  <ul style="margin:6px 0 0 0">
+    <li>Language: <strong>English (en)</strong></li>
+    <li>Parameters use <code>{{1}}</code>, <code>{{2}}</code>, … syntax in the Meta UI</li>
+    <li>Keep body under 1024 characters</li>
+    <li>Add sample values for each parameter (required by Meta for review)</li>
+    <li>Approval typically takes 1–24 hours</li>
+    <li>While pending: <code>send_template_or_text()</code> falls back to plain text — nothing breaks during the window</li>
   </ul>
 </div>
 
-<script>
-function copyText(id, btn) {
-  const el = document.getElementById(id);
-  // Get text content excluding the button
-  const btn_el = el.querySelector('.copy-btn');
-  btn_el.remove();
-  const text = el.innerText.trim();
-  el.appendChild(btn_el);
+<h2>👤 Patient-facing Templates (7)</h2>
+<table>
+  <tr>
+    <th width="18%">Template Name</th>
+    <th width="10%">Category</th>
+    <th width="20%">Parameters</th>
+    <th width="35%">Body Text</th>
+    <th width="17%">Trigger</th>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_24h_reminder</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} date<br>{{3}} time<br>{{4}} clinic name</td>
+    <td class="body-text">Hi {{1}}! 👋 This is a friendly reminder that you have an appointment tomorrow:
 
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = 'Copied!';
-    btn.style.background = '#25d366';
-    setTimeout(() => {
-      btn.textContent = 'Copy';
-      btn.style.background = '#128C7E';
-    }, 2000);
-  });
-}
-</script>
+📅 *Date:* {{2}}
+⏰ *Time:* {{3}}
+🏥 *Clinic:* {{4}}
+
+Please arrive 5 minutes early. Reply CANCEL to cancel. See you soon! 🙏</td>
+    <td>24h before appointment</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_1h_reminder</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} time<br>{{3}} clinic name</td>
+    <td class="body-text">Hi {{1}}! ⏰ Your appointment is in *1 hour* at {{2}}.
+
+🏥 *Clinic:* {{3}}
+
+See you soon! 🙏</td>
+    <td>1h before appointment</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_followup_reminder</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} doctor name<br>{{3}} clinic name</td>
+    <td class="body-text">Hi {{1}}! 👋 We hope you're feeling better after your visit with {{2}} at {{3}}.
+
+How are you doing? Reply *BOOK* to schedule a follow-up, or let us know how you're feeling. 🙏</td>
+    <td>Follow-up check (Scheduler Job 1)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_appointment_cancelled</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} date<br>{{3}} time<br>{{4}} clinic name</td>
+    <td class="body-text">Hi {{1}}, your appointment on {{2}} at {{3}} at {{4}} has been cancelled.
+
+To book a new slot, just send us a message. 🙏</td>
+    <td>Slot block / doctor cancellation</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_waitlist_booked</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} date<br>{{3}} time<br>{{4}} clinic name</td>
+    <td class="body-text">Great news, {{1}}! 🎉 A slot has opened up from the waitlist:
+
+📅 *Date:* {{2}}
+⏰ *Time:* {{3}}
+🏥 *Clinic:* {{4}}
+
+Reply *CONFIRM* to secure this slot or *CANCEL* to decline. 🙏</td>
+    <td>Waitlist auto-book (agent.py)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_prescription_ready</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} doctor name</td>
+    <td class="body-text">Hi {{1}}! 📄 Your prescription from Dr. {{2}} is attached.
+
+Follow the instructions carefully. Contact us if you have any questions. 🙏</td>
+    <td>Prescription PDF sent (agent.py)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_broadcast</span></td>
+    <td><span class="badge marketing">MARKETING</span></td>
+    <td class="param">{{1}} full message body</td>
+    <td class="body-text">{{1}}
+
+_Reply STOP to unsubscribe._</td>
+    <td>Doctor broadcast (agent.py). Marketing category — higher cost, strict review.</td>
+  </tr>
+</table>
+
+<h2>👨‍⚕️ Doctor-facing Templates (11)</h2>
+<table>
+  <tr>
+    <th width="18%">Template Name</th>
+    <th width="10%">Category</th>
+    <th width="20%">Parameters</th>
+    <th width="35%">Body Text</th>
+    <th width="17%">Trigger</th>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_new_booking</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} patient name<br>{{2}} date<br>{{3}} time<br>{{4}} patient phone</td>
+    <td class="body-text">🆕 *New Appointment Booked!*
+
+👤 *Patient:* {{1}}
+📅 *Date:* {{2}}
+⏰ *Time:* {{3}}
+📱 *Phone:* {{4}}</td>
+    <td>Immediately when patient books (flows/booking.py)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_daily_schedule</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor first name<br>{{2}} date<br>{{3}} appointment count</td>
+    <td class="body-text">Good morning, Dr. {{1}}! ☀️
+
+Here is your schedule for {{2}}: you have {{3}} appointment(s) today.
+
+Reply SCHEDULE to see full details or HELP for all commands. 🩺</td>
+    <td>Daily 7 AM IST (Scheduler Job 3)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_notes_reminder</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor first name<br>{{2}} patient count<br>{{3}} patient list</td>
+    <td class="body-text">📋 *Good Evening, Dr. {{1}}!*
+
+You have *{{2}} patient(s)* from today without visit notes yet:
+
+{{3}}
+
+To add notes, send: _"Notes for [name]: [notes]"_ 🩺</td>
+    <td>Nightly 11 PM IST (Scheduler Job 10)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_renewal_14d</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor last name<br>{{2}} expiry date<br>{{3}} early deadline</td>
+    <td class="body-text">🌟 *Time to Renew Your Clinic AI Agent!*
+
+Hi Dr. {{1}}! Your subscription expires in *14 days* (on {{2}}).
+
+✨ *Early Renewal Offer* — Renew before *{{3}}* and get *1 month FREE*!
+
+Reply *RENEW* or contact your account manager. 🙏</td>
+    <td>14 days before expiry</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_renewal_7d</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor last name<br>{{2}} expiry date</td>
+    <td class="body-text">⚠️ *Last Chance — Renew in 7 Days!*
+
+Hi Dr. {{1}}! Your Clinic AI Agent subscription expires on *{{2}}*.
+
+After expiry your patients won't be able to book via WhatsApp.
+
+👉 Reply *RENEW* or contact your account manager today. 🙏</td>
+    <td>7 days before expiry</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_renewal_3d</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} expiry date</td>
+    <td class="body-text">⚠️ *Subscription Expiring in 3 Days!*
+
+Your Clinic AI Agent subscription expires on *{{1}}*.
+
+After that the bot will stop responding to patients.
+
+Please renew NOW. Contact support immediately. 🙏</td>
+    <td>3 days before expiry</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_grace_warning</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} grace period end date</td>
+    <td class="body-text">🔴 *Subscription Expired — Grace Period Active*
+
+Your Clinic AI Agent subscription has expired.
+
+✅ Bot is still running until *{{1}}* (grace period).
+
+Please renew before {{1}} to keep service uninterrupted. Contact support to renew. 🙏</td>
+    <td>When subscription enters grace period</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_trial_welcome</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor name<br>{{2}} trial end date</td>
+    <td class="body-text">🎉 Welcome to Clinic AI Agent, Dr. {{1}}!
+
+Your *7-day free trial* is now active — full access, no credit card needed.
+
+📅 Book appointments | 💬 Patients self-book 24/7 | 🔔 Auto reminders | 📋 Daily schedule
+
+Your trial ends on *{{2}}*.
+
+Type *HELP* to see all commands. Let's go! 🚀</td>
+    <td>First run after trial signup (Scheduler Job 8)</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_trial_nudge_3d</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor name<br>{{2}} days left<br>{{3}} end date<br>{{4}} payment URL<br>{{5}} total (₹)</td>
+    <td class="body-text">⏳ Dr. {{1}}, your free trial ends in *{{2}}* ({{3}}).
+
+To keep your clinic bot running, complete your payment:
+
+👉 {{4}}
+
+*Total today: ₹{{5}}*
+
+Secure payment — UPI / Card / Netbanking. Bot stays live the moment payment clears. 🚀</td>
+    <td>3 days before trial expiry</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_trial_warning_1d</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor name<br>{{2}} "today"/"tomorrow"<br>{{3}} payment URL<br>{{4}} total (₹)</td>
+    <td class="body-text">🔔 *Last chance, Dr. {{1}}!*
+
+Your free trial ends *{{2}}*. After that, your clinic bot pauses.
+
+💳 *Pay now to keep running without any gap:*
+
+👉 {{3}}
+
+*Total: ₹{{4}}*
+
+Bot reactivates automatically on payment. 🙏</td>
+    <td>≤28h before trial expiry</td>
+  </tr>
+  <tr>
+    <td><span class="template-name">clinic_trial_suspended</span></td>
+    <td><span class="badge utility">UTILITY</span></td>
+    <td class="param">{{1}} doctor name<br>{{2}} payment URL<br>{{3}} total (₹)</td>
+    <td class="body-text">😔 Hi Dr. {{1}},
+
+Your 7-day free trial has ended and your Clinic AI Agent has been paused.
+
+Don't worry — all your data is safely stored.
+
+💳 *Complete your payment to reactivate:*
+👉 {{2}}
+*Total today: ₹{{3}}*
+
+Your bot will reactivate automatically once payment is confirmed. 🙏</td>
+    <td>Trial expired → bot auto-suspended</td>
+  </tr>
+</table>
+
+<h2>📝 Submission Checklist</h2>
+<table>
+  <tr><th>Step</th><th>Action</th></tr>
+  <tr><td>1</td><td>Go to <strong>business.facebook.com → WhatsApp Manager → Message Templates → Create Template</strong></td></tr>
+  <tr><td>2</td><td>Set <strong>Category</strong>: Utility (all templates except clinic_broadcast → Marketing)</td></tr>
+  <tr><td>3</td><td>Set <strong>Language</strong>: English (en)</td></tr>
+  <tr><td>4</td><td>Set <strong>Template Name</strong> exactly as shown (lowercase, underscores)</td></tr>
+  <tr><td>5</td><td>Paste body text using <code>{{1}}</code>, <code>{{2}}</code>, … placeholders</td></tr>
+  <tr><td>6</td><td>Add sample values for each parameter (required by Meta)</td></tr>
+  <tr><td>7</td><td>Submit — approval in 1–24 hours</td></tr>
+  <tr><td>8</td><td>Once approved, the codebase automatically switches from fallback text to template delivery</td></tr>
+</table>
+
+<div class="note" style="margin-top:30px">
+  <strong>📌 Total templates to submit: 18</strong><br>
+  Patient-facing: 7 &nbsp;|&nbsp; Doctor-facing: 11<br>
+  <br>
+  All use <code>send_template_or_text()</code> — fallback text is sent until templates are approved, so nothing breaks during the approval window.
+</div>
+
+<p style="color:#888; font-size:12px; margin-top:40px">Generated: June 2025 · Clinic AI Agent codebase · commit 602ee85</p>
 </body>
 </html>
