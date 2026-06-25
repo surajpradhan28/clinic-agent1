@@ -568,7 +568,16 @@ async def _run_daily_doctor_schedule() -> None:
                 lines.append(f"\n_{len(appointments)} appointment(s) today. Have a great day! 🏥_")
                 message = "\n".join(lines)
 
-            success = await whatsapp.send_text(doctor_phone, message, phone_id=client_pid, token=client_token)
+            # Use template so message delivers outside the 24h session window.
+            # Template: clinic_daily_schedule — params: [doctor_name, date, schedule_text]
+            appt_count = str(len(appointments))
+            success = await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_daily_schedule",
+                body_params=[first_name, today_display, appt_count],
+                fallback_text=message,
+                phone_id=client_pid, token=client_token,
+            )
             if success:
                 logger.info(
                     "[Scheduler] Daily schedule sent to client=%s doctor (%d appts)",

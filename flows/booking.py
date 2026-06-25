@@ -101,7 +101,15 @@ async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> No
             f"🔖 *Booking ID:* `{booking_id}`"
         )
         try:
-            await whatsapp.send_text(doctor_phone, doctor_alert, phone_id=client_pid, token=client_token)
+            # Use template so alert delivers even outside the 24h session window.
+            # Template: clinic_new_booking — params: [patient_name, date, slot, patient_phone]
+            await whatsapp.send_template_or_text(
+                doctor_phone,
+                template_name="clinic_new_booking",
+                body_params=[name, date_display, slot, patient_wa],
+                fallback_text=doctor_alert,
+                phone_id=client_pid, token=client_token,
+            )
             logger.info("[Booking] Doctor notified (client=%s, appt=%s)", client_id, appt_id)
         except Exception as e:
             logger.error("[Booking] Doctor alert failed (client=%s): %s", client_id, e)
