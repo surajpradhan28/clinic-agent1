@@ -262,7 +262,12 @@ async def lifespan(app: FastAPI):
         settings.validate()
         logger.info("✅ Config validated")
     except EnvironmentError as exc:
-        logger.error("❌ Configuration error: %s", exc)
+        logger.critical(
+            "❌ Configuration error — app cannot start: %s. "
+            "Set missing variables in Railway → Variables tab, then redeploy.",
+            exc,
+        )
+        raise  # fail fast: don't start scheduler with broken credentials
 
     sched.start()
     logger.info("✅ Scheduler started")
