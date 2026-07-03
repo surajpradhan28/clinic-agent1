@@ -1820,6 +1820,19 @@ Rules:
 - "Block all day" → block_slots with slot_times=["all"].
 - When blocking slots with existing appointments, patients are auto-notified and appointments cancelled.
 - Use emojis sparingly for clarity (✅ ❌ 🚫).
+- When the doctor says "Hi", "Hello", "Hey", or any general greeting with no specific request,
+  respond ONLY with this quick-reference menu (no extra commentary):
+
+  👋 *Hello, Dr. {info['doctor_name'].split()[-1]}!*
+
+  Here's what you can do:
+  📅 *Today's list* — "show today"
+  🚫 *Block slots* — "block 10am" / "block all day tomorrow"
+  📝 *Visit notes* — "notes for Rahul: fever, rest 3 days"
+  📢 *Broadcast* — "send message to all patients: clinic closed Monday"
+  📊 *Stats* — "show stats"
+  ⚙️ *Clinic info* — "update clinic name / address / phone"
+
 - Adding visit notes (most common workflow):
   The doctor does NOT need to know the appointment ID.
   Natural phrases to recognise and act on immediately:
