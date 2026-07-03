@@ -64,9 +64,10 @@ class Settings:
 
     # ── Doctor WhatsApp (Suite plan — daily schedule) ─────────────────────────
     DOCTOR_PHONE: str = os.getenv("DOCTOR_PHONE", "")   # e.g. "919876543210"
-    # Default 2 UTC = 7:30 AM IST — morning schedule arrives before clinic opens.
-    # Set DAILY_SCHEDULE_HOUR=1 for 6:30 AM IST or =3 for 8:30 AM IST.
-    DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "2"))  # 2 UTC = 7:30 AM IST
+    # Default 1:30 UTC = 7:00 AM IST — morning schedule arrives before clinic opens.
+    # Override with DAILY_SCHEDULE_HOUR + DAILY_SCHEDULE_MINUTE env vars.
+    DAILY_SCHEDULE_HOUR: int = int(os.getenv("DAILY_SCHEDULE_HOUR", "1"))   # 1 UTC = 6:30 AM IST base
+    DAILY_SCHEDULE_MINUTE: int = int(os.getenv("DAILY_SCHEDULE_MINUTE", "30"))  # +30 min → 7:00 AM IST
 
     # ── Recurring schedule rules ──────────────────────────────────────────────
     # Comma-separated day names when clinic is closed (e.g. "Sunday" or "Saturday,Sunday")

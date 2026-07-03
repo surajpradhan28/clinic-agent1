@@ -1253,6 +1253,25 @@ load();
     return HTMLResponse(content=html)
 
 
+@app.get("/clinic/qr/{dashboard_key}")
+async def clinic_qr_code(dashboard_key: str):
+    """Return a PNG QR code that links to this clinic's dashboard."""
+    import qrcode, io
+    from fastapi.responses import StreamingResponse
+    client = db.get_client_by_dashboard_key(dashboard_key)
+    if not client:
+        raise HTTPException(status_code=404, detail="Invalid dashboard key")
+    url = f"{settings.SERVER_URL}/clinic?key={dashboard_key}"
+    qr = qrcode.QRCode(version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#075E54", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
 @app.get("/clinic")
 async def clinic_dashboard_view(request: Request):
     """
@@ -2715,6 +2734,10 @@ async def receive_message(request: Request):
             return JSONResponse({"status": "ok", "flow": "admin"})
 
         # ── STEP 1: Resolve which clinic this message is for ──────────────────
+        logger.info(
+            "🔍 Webhook from=%s phone_number_id=%s WHATSAPP_PHONE_ID=%s",
+            phone, phone_number_id, settings.WHATSAPP_PHONE_ID,
+        )
         client = _resolve_client(phone_number_id)
         if client is None:
             # Unknown phone number ID —  not a registered clinic
@@ -2731,6 +2754,10 @@ async def receive_message(request: Request):
         logger.info(
             "📩 Message from %s (%s) →  client=%s (%s): %s",
             phone, name, client_id, client["name"], text[:80],
+        )
+        logger.info(
+            "🔍 Doctor check: phone=%s contact_phone=%s is_doctor=%s",
+            phone, client.get("contact_phone"), _is_doctor(phone, client),
         )
 
         # ── STEP 2: Check subscription status ────────────────────────────────

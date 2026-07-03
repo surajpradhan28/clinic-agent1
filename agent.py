@@ -205,13 +205,15 @@ def _get_slots_for_date(client_id: int, date: str) -> list[str]:
 
 
 def _get_clinic_info(client_id: int) -> dict[str, str]:
-    db_settings = db.get_all_clinic_settings(client_id)
+    db_settings  = db.get_all_clinic_settings(client_id)
+    # Fall back to clients table so we never leak another client's global settings
+    client_row   = db.get_client_by_id(client_id) or {}
     return {
-        "clinic_name":        db_settings.get("clinic_name")        or settings.CLINIC_NAME,
-        "doctor_name":        db_settings.get("doctor_name")         or settings.DOCTOR_NAME,
-        "clinic_address":     db_settings.get("clinic_address")      or settings.CLINIC_ADDRESS,
-        "clinic_phone":       db_settings.get("clinic_phone")        or "",
-        "google_review_link": db_settings.get("google_review_link")  or settings.GOOGLE_REVIEW_LINK,
+        "clinic_name":        db_settings.get("clinic_name")        or client_row.get("name", "")          or settings.CLINIC_NAME,
+        "doctor_name":        db_settings.get("doctor_name")        or client_row.get("doctor_name", "")   or "",
+        "clinic_address":     db_settings.get("clinic_address")     or "",
+        "clinic_phone":       db_settings.get("clinic_phone")       or "",
+        "google_review_link": db_settings.get("google_review_link") or settings.GOOGLE_REVIEW_LINK,
     }
 
 
@@ -982,10 +984,17 @@ async def _execute_function(
                 int(age) if age is not None else None,
                 gender, chief_complaint,
             )
+            # Return the appointment row so booking.py sends the confirmation card
+            # AFTER intake is fully collected (not immediately on booking).
+            fetched_appt = None
+            try:
+                fetched_appt = db.get_appointment_by_id(client_id, int(appt_id))
+            except Exception:
+                pass
             return json.dumps({
                 "success": True,
                 "message": "Intake details saved. The doctor will review them before your appointment.",
-            }), None
+            }), fetched_appt
         except Exception as exc:
             logger.error("save_patient_intake error: %s", exc)
             return json.dumps({"success": False, "error": str(exc)}), None
@@ -1971,7 +1980,16 @@ async def _get_agent_reply_inner(phone: str, user_text: str, client: dict) -> tu
             logger.info("AI calling %s(%s) for client=%s", fn_name, fn_args, client_id)
             fn_result, maybe_appt = await _execute_function(fn_name, fn_args, phone, client)
             if maybe_appt:
-                appt_row = maybe_appt
+                # For new patients, hold off the confirmation card until intake is done.
+                # save_patient_intake returns the appt row once intake is collected.
+                _is_new = False
+                if fn_name == "create_appointment":
+                    try:
+                        _is_new = json.loads(fn_result).get("is_new_patient", False)
+                    except Exception:
+                        pass
+                if not _is_new:
+                    appt_row = maybe_appt
             tool_results.append({"role": "tool", "tool_call_id": tc.id, "content": fn_result})
 
             # ── Inline intake injection (collected, NOT appended yet) ─────────
