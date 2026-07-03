@@ -2738,7 +2738,7 @@ async def receive_message(request: Request):
             "🔍 Webhook from=%s phone_number_id=%s WHATSAPP_PHONE_ID=%s",
             phone, phone_number_id, settings.WHATSAPP_PHONE_ID,
         )
-        client = _resolve_client(phone_number_id)
+        client = _resolve_client(phone_number_id, sender_phone=phone)
         if client is None:
             # Unknown phone number ID —  not a registered clinic
             logger.warning(
@@ -2883,17 +2883,25 @@ async def receive_message(request: Request):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _resolve_client(phone_number_id: str) -> dict | None:
+def _resolve_client(phone_number_id: str, sender_phone: str = "") -> dict | None:
     """
     Look up the client by their Meta phone_number_id.
 
-    Falls back to client_id=1 if WHATSAPP_PHONE_ID matches and there's only
-    one client in the DB —  makes migration from single-tenant painless.
+    Falls back to client_id=1 if WHATSAPP_PHONE_ID matches (single-tenant compat).
+    But first checks if the sender is a registered doctor on ANY client — this
+    handles the common case where multiple clinics share the same WhatsApp bot number.
     """
     if phone_number_id:
         client = db.get_client_by_phone_id(phone_number_id)
         if client:
             return client
+
+    # Shared bot number fallback: check if sender is a doctor for any clinic first
+    # This solves the multi-tenant-on-single-number case correctly.
+    if sender_phone:
+        doctor_client = db.get_client_by_doctor_phone(sender_phone)
+        if doctor_client:
+            return doctor_client
 
     # Fallback: if no phone_number_id match, return client 1 (single-tenant compat)
     if settings.WHATSAPP_PHONE_ID and not phone_number_id:

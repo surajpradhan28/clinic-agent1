@@ -60,6 +60,23 @@ def get_client_by_phone_id(whatsapp_phone_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def get_client_by_doctor_phone(phone: str) -> dict | None:
+    """
+    Find which client (clinic) has this phone number as their doctor.
+    Used as fallback when multiple clinics share the same WhatsApp bot number.
+    Strips leading '+' and '0' for comparison.
+    """
+    clean = lambda p: p.lstrip("+").lstrip("0")
+    phone_clean = clean(phone)
+    db = get_db()
+    result = db.table("clients").select("*").execute()
+    for row in result.data or []:
+        cp = clean((row.get("contact_phone") or "").strip())
+        if cp and (cp == phone_clean or phone_clean.endswith(cp) or cp.endswith(phone_clean)):
+            return row
+    return None
+
+
 def get_all_active_clients() -> list[dict]:
     """Return all clients with status 'active' or 'trial'. Used by scheduler."""
     db = get_db()
