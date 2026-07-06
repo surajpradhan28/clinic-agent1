@@ -1253,9 +1253,9 @@ function _tableToCSV(table) {{
   var rows = Array.from(table.querySelectorAll('tr'));
   return rows.map(function(row) {{
     return Array.from(row.querySelectorAll('th,td')).map(function(cell) {{
-      return '"' + cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ').trim() + '"';
+      return '"' + cell.innerText.replace(/"/g, '""').replace(/\\n/g, ' ').trim() + '"';
     }}).join(',');
-  }}).join('\n');
+  }}).join('\\n');
 }}
 function _downloadCSV(csv, filename) {{
   var blob = new Blob([csv], {{ type: 'text/csv' }});
