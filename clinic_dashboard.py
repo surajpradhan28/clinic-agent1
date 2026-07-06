@@ -11,6 +11,7 @@ Used by:  GET /clinic?key=<dashboard_key>  (in main.py)
 from __future__ import annotations
 
 import html
+import json as _json
 import logging
 from datetime import datetime, timedelta, timezone, date
 
@@ -82,6 +83,10 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
     doctor_name = info.get("doctor_name") or client.get("doctor_name", "Doctor")
     clinic_addr = info.get("clinic_address") or ""
     clinic_ph   = info.get("clinic_phone") or ""
+
+    # Clinic initials for avatar (e.g. "Nishat Sheikh Clinic" → "NS")
+    _words = (clinic_name or "Clinic").split()
+    clinic_initials = "".join(w[0].upper() for w in _words if w)[:2]
 
     stats           = db.get_dashboard_stats(client_id)
     today_appts     = db.get_appointments_for_date(client_id, today_str)
@@ -157,10 +162,11 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
     # ── Sub-render helpers ────────────────────────────────────────────────────
 
     def _stat_card(value, label, icon, color):
+        display_val = value if value is not None else 0
         return f"""
         <div class="stat-card" style="border-top:4px solid {color}">
-          <div class="stat-icon" style="color:{color}">{icon}</div>
-          <div class="stat-value">{_esc(value)}</div>
+          <div class="stat-icon-wrap" style="background:{color}1a">{icon}</div>
+          <div class="stat-value" style="color:{color}">{_esc(display_val)}</div>
           <div class="stat-label">{_esc(label)}</div>
         </div>"""
 
@@ -246,24 +252,14 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
             </tr>"""
         return rows
 
-    # ── Trend chart (pure CSS bars) ───────────────────────────────────────────
+    # ── Trend chart (Chart.js canvas) ────────────────────────────────────────
     def _trend_chart():
         if not monthly_counts:
-            return '<p class="empty-row">No data yet.</p>'
-        max_count = max((r["count"] for r in monthly_counts), default=1) or 1
-        bars = ""
-        for r in monthly_counts:
-            pct    = round(r["count"] / max_count * 100)
-            height = max(pct, 4)
-            bars += f"""
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
-              <div style="font-size:12px;font-weight:600;color:#1f2937">{r['count']}</div>
-              <div style="width:100%;height:120px;display:flex;align-items:flex-end">
-                <div style="width:100%;height:{height}%;background:#128c7e;border-radius:4px 4px 0 0;min-height:4px"></div>
-              </div>
-              <div style="font-size:11px;color:#6b7280;text-align:center">{_esc(r['month'])}</div>
-            </div>"""
-        return f'<div style="display:flex;gap:8px;align-items:flex-end;padding:16px 20px">{bars}</div>'
+            return '<p class="empty-row" style="padding:40px;text-align:center;color:#9ca3af">No appointment data yet.</p>'
+        labels = [r["month"] for r in monthly_counts]
+        counts = [r["count"] for r in monthly_counts]
+        chart_json = html.escape(_json.dumps({"labels": labels, "data": counts}), quote=True)
+        return f'<div style="padding:16px 20px 20px"><canvas id="trendChart" height="160" data-chart="{chart_json}"></canvas></div>'
 
     # ── Cancellation stats ────────────────────────────────────────────────────
     def _cancel_stats_html():
@@ -530,86 +526,165 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{_esc(clinic_name)} — Dashboard</title>
   <style>
+    /* ── Reset & variables ── */
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
-    :root {{ --bg-sec: #f9fafb; }}
-
+    :root {{
+      --green: #128c7e;
+      --green-dark: #0d7066;
+      --green-light: rgba(18,140,126,.1);
+      --blue: #1967d2;
+      --purple: #7b2fbe;
+      --orange: #e37400;
+      --red: #c5221f;
+      --text: #1f2937;
+      --text-muted: #6b7280;
+      --text-faint: #9ca3af;
+      --border: #f3f4f6;
+      --bg: #f0f2f5;
+      --bg-sec: #f9fafb;
+      --white: #ffffff;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+    }}
     body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f0f2f5;
-      color: #1f2937;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }}
 
     /* ── Top bar ── */
     .topbar {{
-      background: #128c7e;
+      background: linear-gradient(135deg, #0d7066 0%, #128c7e 60%, #16a085 100%);
       color: #fff;
-      padding: 14px 24px;
+      padding: 0 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+      min-height: 64px;
     }}
-    .topbar-left {{ display: flex; align-items: center; gap: 12px; }}
-    .topbar-logo {{ font-size: 28px; }}
-    .topbar-title h1 {{ font-size: 18px; font-weight: 700; line-height: 1.2; }}
-    .topbar-title p  {{ font-size: 13px; opacity: 0.85; }}
-    .topbar-meta     {{ font-size: 12px; opacity: 0.75; text-align: right; }}
+    .topbar-left {{ display: flex; align-items: center; gap: 14px; padding: 14px 0; }}
+    .clinic-avatar {{
+      width: 44px; height: 44px; border-radius: 12px;
+      background: rgba(255,255,255,.22);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; color: #fff;
+      letter-spacing: -0.5px; flex-shrink: 0;
+    }}
+    .topbar-title h1 {{ font-size: 17px; font-weight: 700; line-height: 1.2; }}
+    .topbar-title p  {{ font-size: 12px; opacity: 0.82; margin-top: 2px; }}
+    .topbar-right {{ display: flex; align-items: center; gap: 12px; padding: 14px 0; }}
+    .topbar-meta  {{ font-size: 11px; opacity: 0.72; text-align: right; line-height: 1.5; }}
+    .topbar-refresh {{
+      background: rgba(255,255,255,.18); color: #fff; border: none;
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+    }}
+    .topbar-refresh:hover {{ background: rgba(255,255,255,.32); }}
 
     /* ── Plan badge ── */
     .plan-badge {{
       display: inline-block;
-      background: {plan_badge_colour};
+      background: rgba(255,255,255,.25);
       color: #fff;
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       text-transform: uppercase;
       margin-left: 8px;
       vertical-align: middle;
     }}
 
+    /* ── Quick nav ── */
+    .quick-nav {{
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }}
+    .quick-nav::-webkit-scrollbar {{ display: none; }}
+    .quick-nav a {{
+      padding: 11px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }}
+    .quick-nav a:hover {{ color: var(--green); border-bottom-color: var(--green); }}
+
     /* ── Layout ── */
-    .container {{ max-width: 1100px; margin: 0 auto; padding: 24px 16px; }}
+    .container {{ max-width: 1140px; margin: 0 auto; padding: 24px 16px 48px; }}
 
     /* ── Stat cards ── */
     .stats-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
     }}
     .stat-card {{
-      background: #fff;
-      border-radius: 10px;
-      padding: 20px;
+      background: var(--white);
+      border-radius: 12px;
+      padding: 22px 20px;
       text-align: center;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      box-shadow: var(--shadow);
+      transition: transform .18s, box-shadow .18s;
     }}
-    .stat-icon  {{ font-size: 28px; margin-bottom: 6px; }}
-    .stat-value {{ font-size: 32px; font-weight: 700; line-height: 1; }}
-    .stat-label {{ font-size: 13px; color: #6b7280; margin-top: 4px; }}
+    .stat-card:hover {{
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }}
+    .stat-icon-wrap {{
+      width: 50px; height: 50px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px; font-size: 22px;
+    }}
+    .stat-value {{ font-size: 36px; font-weight: 800; line-height: 1; letter-spacing: -1px; }}
+    .stat-label {{ font-size: 12px; color: var(--text-muted); margin-top: 6px; font-weight: 500; }}
 
     /* ── Cards / panels ── */
     .card {{
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08);
-      margin-bottom: 20px;
+      background: var(--white);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
       overflow: hidden;
     }}
     .card-header {{
       padding: 14px 20px;
-      border-bottom: 1px solid #f3f4f6;
-      font-weight: 600;
-      font-size: 15px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      font-size: 14px;
       display: flex;
       align-items: center;
       gap: 8px;
+      color: var(--text);
+    }}
+    .card-header-count {{
+      margin-left: auto;
+      background: var(--bg-sec);
+      color: var(--text-muted);
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
     }}
     .card-body {{ padding: 0; }}
 
@@ -618,131 +693,175 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
     th, td {{
       padding: 11px 16px;
       text-align: left;
-      font-size: 14px;
-      border-bottom: 1px solid #f3f4f6;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
     }}
-    th {{ background: #f9fafb; font-weight: 600; font-size: 12px; text-transform: uppercase;
-          letter-spacing: 0.4px; color: #6b7280; }}
+    th {{
+      background: var(--bg-sec); font-weight: 700; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint);
+    }}
     tr:last-child td {{ border-bottom: none; }}
-    tr:hover td {{ background: #fafafa; }}
-    .empty-row {{ color: #9ca3af; font-style: italic; text-align: center; padding: 24px; }}
+    tbody tr:hover td {{ background: rgba(18,140,126,.03); }}
+    .empty-row {{ color: var(--text-faint); font-style: italic; text-align: center; padding: 32px 16px; font-size: 13px; }}
 
     /* ── Info section ── */
     .info-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 0;
     }}
     .info-item {{
-      padding: 14px 20px;
-      border-bottom: 1px solid #f3f4f6;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
     }}
     .info-item:last-child {{ border-bottom: none; }}
-    .info-label {{ font-size: 11px; text-transform: uppercase; color: #9ca3af;
-                   font-weight: 600; letter-spacing: 0.5px; margin-bottom: 3px; }}
-    .info-value {{ font-size: 14px; color: #1f2937; }}
+    .info-label {{
+      font-size: 10px; text-transform: uppercase; color: var(--text-faint);
+      font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px;
+    }}
+    .info-value {{ font-size: 14px; color: var(--text); }}
 
     /* ── Patient history notes ── */
     .notes-text {{
       white-space: pre-wrap;
       font-size: 13px;
       color: #374151;
-      line-height: 1.5;
+      line-height: 1.55;
     }}
 
     /* ── Inline edit UI ── */
     .edit-btn {{
-      background: none; border: 1px solid #e2e8f0; color: #9ca3af;
+      background: none; border: 1px solid var(--border); color: var(--text-faint);
       font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer;
-      margin-left: 8px; vertical-align: middle; transition: all .15s;
+      margin-left: 6px; vertical-align: middle; transition: all .15s;
     }}
-    .edit-btn:hover {{ border-color: #128c7e; color: #128c7e; background: #f0faf8; }}
+    .edit-btn:hover {{ border-color: var(--green); color: var(--green); background: var(--green-light); }}
     .edit-row {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
     .edit-input {{
-      font-size: 14px; border: 1.5px solid #128c7e; border-radius: 8px;
-      padding: 4px 10px; outline: none; width: 100%; max-width: 360px;
+      font-size: 14px; border: 1.5px solid var(--green); border-radius: 8px;
+      padding: 5px 10px; outline: none; width: 100%; max-width: 360px;
+      transition: box-shadow .15s;
     }}
+    .edit-input:focus {{ box-shadow: 0 0 0 3px rgba(18,140,126,.15); }}
     .save-btn {{
-      background: #128c7e; color: #fff; border: none; padding: 4px 12px;
-      border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer;
+      background: var(--green); color: #fff; border: none; padding: 5px 14px;
+      border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: background .15s;
     }}
-    .save-btn:hover {{ background: #0f6e56; }}
+    .save-btn:hover {{ background: var(--green-dark); }}
     .cancel-btn {{
-      background: none; border: 1px solid #e2e8f0; color: #6b7280;
-      padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer;
+      background: none; border: 1px solid var(--border); color: var(--text-muted);
+      padding: 5px 10px; border-radius: 7px; font-size: 12px; cursor: pointer;
     }}
     .notes-edit-area {{
-      width: 100%; min-height: 80px; font-size: 13px; border: 1.5px solid #128c7e;
+      width: 100%; min-height: 80px; font-size: 13px; border: 1.5px solid var(--green);
       border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical;
       font-family: inherit; margin-top: 4px;
     }}
     .toast {{
-      position: absolute; top: 8px; right: 8px; background: #128c7e; color: #fff;
-      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
-      opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 10;
+      position: absolute; top: 12px; right: 12px;
+      background: var(--green); color: #fff;
+      font-size: 12px; font-weight: 700; padding: 7px 14px;
+      border-radius: 8px; opacity: 0; transition: opacity .3s;
+      pointer-events: none; z-index: 10; box-shadow: var(--shadow-md);
     }}
     .toast.show {{ opacity: 1; }}
 
-    /* ── Two-column card grid (trend + cancel stats) ── */
+    /* ── Two-column card grid ── */
     .two-col {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 20px;
-      margin-bottom: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
     }}
     .two-col .card {{ margin-bottom: 0; }}
 
     /* ── Search box ── */
     .search-box {{
-      padding: 10px 16px 14px;
-      border-bottom: 1px solid #f3f4f6;
+      padding: 12px 16px 14px;
+      border-bottom: 1px solid var(--border);
     }}
     .search-box input {{
       width: 100%;
-      padding: 8px 12px;
+      padding: 9px 12px;
       border: 1px solid #d1d5db;
       border-radius: 8px;
       font-size: 14px;
       outline: none;
       box-sizing: border-box;
+      transition: border-color .15s, box-shadow .15s;
     }}
     .search-box input:focus {{
-      border-color: #128c7e;
-      box-shadow: 0 0 0 2px rgba(18,140,126,.15);
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(18,140,126,.12);
     }}
+
+    /* ── Export buttons ── */
+    .export-btn {{
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }}
+    .export-btn:hover {{ opacity: .85; transform: translateY(-1px); }}
+    .export-btn:active {{ transform: translateY(0); }}
 
     /* ── Footer ── */
     footer {{
       text-align: center;
       font-size: 12px;
-      color: #9ca3af;
-      padding: 20px 0 32px;
+      color: var(--text-faint);
+      padding: 24px 0 36px;
     }}
 
     /* ── Responsive ── */
-    @media (max-width: 600px) {{
-      .topbar {{ padding: 12px 16px; }}
+    @media (max-width: 640px) {{
+      .topbar {{ padding: 0 14px; }}
       .stats-grid {{ grid-template-columns: repeat(2, 1fr); gap: 10px; }}
-      .stat-value {{ font-size: 26px; }}
-      th, td {{ padding: 9px 12px; font-size: 13px; }}
+      .stat-value {{ font-size: 28px; }}
+      .two-col {{ grid-template-columns: 1fr; }}
+      th, td {{ padding: 9px 12px; font-size: 12px; }}
+      .quick-nav {{ padding: 0 14px; }}
+      .container {{ padding: 16px 12px 48px; }}
+    }}
+
+    /* ── Print ── */
+    @media print {{
+      .topbar, .quick-nav, .export-btn, .edit-btn, .save-btn, .cancel-btn, footer {{ display: none !important; }}
+      .card {{ box-shadow: none; border: 1px solid #e5e7eb; }}
+      body {{ background: white; }}
     }}
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
 <!-- Top bar -->
 <div class="topbar">
   <div class="topbar-left">
-    <div class="topbar-logo">🏥</div>
+    <div class="clinic-avatar">{_esc(clinic_initials)}</div>
     <div class="topbar-title">
       <h1>{_esc(clinic_name)} <span class="plan-badge">{_esc(sub_plan)}</span></h1>
       <p>Dr. {_esc(doctor_name)}</p>
     </div>
   </div>
-  <div class="topbar-meta">
-    Last updated<br>{_esc(generated_at)}
+  <div class="topbar-right">
+    <div class="topbar-meta">Updated {_esc(generated_at)}</div>
+    <a href="?key={_esc(dashboard_key)}" class="topbar-refresh">↻ Refresh</a>
   </div>
 </div>
+
+<!-- Quick navigation -->
+<nav class="quick-nav">
+  <a href="#today">📋 Today</a>
+  <a href="#week">🗓️ Week</a>
+  <a href="#activity">🕐 Activity</a>
+  <a href="#followups">💬 Follow-ups</a>
+  <a href="#due-soon">🔔 Due Soon</a>
+  <a href="#history">📋 History</a>
+  <a href="#billing">🧾 Billing</a>
+  <a href="#info">ℹ️ Info</a>
+</nav>
 
 <div class="container">
 
@@ -755,8 +874,8 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   </div>
 
   <!-- Today's schedule -->
-  <div class="card">
-    <div class="card-header">📋 Today's Appointments — {_esc(_fmt_date(today_str))}</div>
+  <div id="today" class="card">
+    <div class="card-header">📋 Today's Appointments — {_esc(_fmt_date(today_str))} <span class="card-header-count">{len(today_appts)}</span></div>
     <div class="card-body">
       <table>
         <thead><tr><th>Time</th><th>Patient</th></tr></thead>
@@ -766,7 +885,7 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   </div>
 
   <!-- Upcoming week -->
-  <div class="card">
+  <div id="week" class="card">
     <div class="card-header">🗓️ Upcoming This Week</div>
     <div class="card-body">
       <table>
@@ -777,7 +896,7 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   </div>
 
   <!-- Recent activity -->
-  <div class="card">
+  <div id="activity" class="card">
     <div class="card-header">🕐 Recent Activity</div>
     <div class="card-body">
       <table>
@@ -788,7 +907,7 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   </div>
 
   <!-- ① Follow-up tracker + ② Trend chart (side by side) -->
-  <div class="two-col">
+  <div id="followups" class="two-col">
 
     <div class="card">
       <div class="card-header">💬 Follow-up Responses</div>
@@ -820,7 +939,7 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   <!-- ④ Follow-ups due soon + ⑤ Waitlist (side by side) -->
   <div class="two-col">
 
-    <div class="card">
+    <div id="due-soon" class="card">
       <div class="card-header">🔔 Follow-ups Due Soon</div>
       <div class="card-body">
         <table>
@@ -846,13 +965,13 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   <div class="two-col">
 
     <div class="card">
-      <div class="card-header">🩺 New Patient Intake Forms</div>
+      <div class="card-header">🩺 New Patient Intake Forms <span class="card-header-count">{len(intake_rows)}</span></div>
       <div class="card-body">
         {_intake_cards()}
       </div>
     </div>
 
-    <div class="card">
+    <div id="billing" class="card">
       <div class="card-header">🧾 Invoice &amp; Billing History</div>
       <div class="card-body">
         <table>
@@ -870,25 +989,21 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
     <div class="card-body" style="padding:16px 20px">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
         <button onclick="exportTableCSV('historyTable','patient_history.csv')"
-          style="background:#128c7e;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          class="export-btn" style="background:#128c7e;color:#fff">
           ⬇ Patient History CSV
         </button>
-        <button onclick="exportTableCSV('notesTable','visit_notes.csv')" id="notesExportBtn"
-          style="background:#1967d2;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-          ⬇ Visit Notes CSV
-        </button>
         <button onclick="exportFollowupsCSV()"
-          style="background:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          class="export-btn" style="background:#6b7280;color:#fff">
           ⬇ Follow-up Responses CSV
         </button>
       </div>
-      <p style="font-size:12px;color:#9ca3af;margin-top:10px">Exports exactly what is shown in the tables above as a .csv file you can open in Excel or Google Sheets.</p>
+      <p style="font-size:12px;color:#9ca3af;margin-top:10px">Downloads a .csv file you can open in Excel or Google Sheets.</p>
     </div>
   </div>
 
   <!-- Patient visit history (all visits, grouped by patient) -->
-  <div class="card">
-    <div class="card-header">📋 Patient History</div>
+  <div id="history" class="card">
+    <div class="card-header">📋 Patient History <span class="card-header-count">{len(visit_notes_history)}</span></div>
     <div class="search-box">
       <input type="text" id="notesSearch" placeholder="🔍 Search by patient name or phone…"
              oninput="filterPatients(this.value)">
@@ -951,7 +1066,7 @@ def render_clinic_dashboard(client: dict, dashboard_key: str = "") -> str:
   </div>
 
   <!-- Clinic info + subscription (editable) -->
-  <div class="card" style="position:relative">
+  <div id="info" class="card" style="position:relative">
     <div class="toast" id="infoToast">✅ Saved!</div>
     <div class="card-header">ℹ️ Clinic Info &amp; Subscription</div>
     <div class="card-body">
@@ -1133,36 +1248,40 @@ function saveNotes(apptId) {{
   .catch(function(){{ alert("Network error — please try again."); }});
 }}
 
-function exportTableCSV(tableId, filename) {{
-  var table = document.getElementById(tableId);
-  if (!table) {{ alert('No data to export.'); return; }}
+/* ── CSV export helpers ── */
+function _tableToCSV(table) {{
   var rows = Array.from(table.querySelectorAll('tr'));
-  var csv  = rows.map(function(row) {{
+  return rows.map(function(row) {{
     return Array.from(row.querySelectorAll('th,td')).map(function(cell) {{
-      var text = cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ').trim();
-      return '"' + text + '"';
+      return '"' + cell.innerText.replace(/"/g, '""').replace(/\n/g, ' ').trim() + '"';
     }}).join(',');
   }}).join('\n');
+}}
+function _downloadCSV(csv, filename) {{
   var blob = new Blob([csv], {{ type: 'text/csv' }});
-  var a    = document.createElement('a');
-  a.href   = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
 }}
-
+function exportTableCSV(tableId, filename) {{
+  var table = document.getElementById(tableId);
+  if (!table) {{ alert('No data to export.'); return; }}
+  _downloadCSV(_tableToCSV(table), filename);
+}}
 function exportFollowupsCSV() {{
-  var rows = Array.from(document.querySelectorAll('table tbody tr'));
-  // find the follow-up tracker table specifically
   var fuTable = null;
   document.querySelectorAll('.card').forEach(function(card) {{
-    if (card.querySelector('.card-header') && card.querySelector('.card-header').innerText.includes('Follow-up Response')) {{
+    var hdr = card.querySelector('.card-header');
+    if (hdr && hdr.textContent.includes('Follow-up Response')) {{
       fuTable = card.querySelector('table');
     }}
   }});
-  if (fuTable) {{ exportTableCSV('', 'followup_responses.csv'); }}
-  else {{ alert('No follow-up data to export.'); }}
+  if (!fuTable) {{ alert('No follow-up data to export.'); return; }}
+  _downloadCSV(_tableToCSV(fuTable), 'followup_responses.csv');
 }}
 
+/* ── Patient history expand/collapse ── */
 function togglePatient(id) {{
   var detail = document.getElementById('detail_' + id);
   var arrow  = document.getElementById('arrow_' + id);
@@ -1172,26 +1291,67 @@ function togglePatient(id) {{
   arrow.textContent    = open ? '▸' : '▾';
 }}
 
+/* ── Patient search filter ── */
 function filterPatients(query) {{
   var q = query.toLowerCase().trim();
-  var rows = document.querySelectorAll('#historyTbody tr.patient-hdr');
-  rows.forEach(function(hdr) {{
-    var text    = hdr.innerText.toLowerCase();
-    var visible = !q || text.includes(q);
+  document.querySelectorAll('#historyTbody tr.patient-hdr').forEach(function(hdr) {{
+    var visible = !q || hdr.innerText.toLowerCase().includes(q);
     hdr.style.display = visible ? '' : 'none';
-    // Hide associated detail row too
-    var pid    = hdr.getAttribute('onclick').match(/'([^']+)'/)[1];
-    var detail = document.getElementById('detail_' + pid);
-    if (detail) detail.style.display = 'none';
-    var arrow  = document.getElementById('arrow_' + pid);
-    if (arrow) arrow.textContent = '▸';
+    var match = hdr.getAttribute('onclick').match(/'([^']+)'/);
+    if (match) {{
+      var pid = match[1];
+      var detail = document.getElementById('detail_' + pid);
+      if (detail) detail.style.display = 'none';
+      var arrow  = document.getElementById('arrow_' + pid);
+      if (arrow) arrow.textContent = '▸';
+    }}
   }});
 }}
+
+/* ── Chart.js trend chart ── */
+(function() {{
+  var canvas = document.getElementById('trendChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  var raw = canvas.getAttribute('data-chart');
+  if (!raw) return;
+  try {{
+    var d = JSON.parse(raw);
+    new Chart(canvas, {{
+      type: 'bar',
+      data: {{
+        labels: d.labels,
+        datasets: [{{
+          label: 'Appointments',
+          data: d.data,
+          backgroundColor: 'rgba(18,140,126,0.15)',
+          borderColor: '#128c7e',
+          borderWidth: 2,
+          borderRadius: 6,
+          hoverBackgroundColor: 'rgba(18,140,126,0.35)'
+        }}]
+      }},
+      options: {{
+        responsive: true,
+        plugins: {{ legend: {{ display: false }} }},
+        scales: {{
+          y: {{
+            beginAtZero: true,
+            ticks: {{ stepSize: 1, color: '#9ca3af', font: {{ size: 11 }} }},
+            grid: {{ color: '#f3f4f6' }}
+          }},
+          x: {{
+            ticks: {{ color: '#6b7280', font: {{ size: 11 }} }},
+            grid: {{ display: false }}
+          }}
+        }}
+      }}
+    }});
+  }} catch(e) {{ console.warn('Chart init failed', e); }}
+}})();
 </script>
 
 <footer>
-  Powered by Clinic AI Agent &nbsp;·&nbsp; Read-only view &nbsp;·&nbsp;
-  Manage appointments via WhatsApp
+  Powered by <strong>Clinic AI Agent</strong> &nbsp;·&nbsp; Manage appointments via WhatsApp
 </footer>
 
 </body>
