@@ -650,7 +650,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
     <div class="pricing-grid">
       <div class="plan-card reveal">
         <div class="plan-name">Starter</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price1">999</span><span class="plan-period">/month</span></div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price1">1,499</span><span class="plan-period">/month</span></div>
         <div class="plan-annual" id="annual1"></div>
         <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
         <div class="plan-features">
@@ -702,7 +702,7 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
         <a href="/signup?plan=suite"><button class="btn-plan outline">Start Free Trial</button></a>
       </div>
     </div>
-    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee:₹1,500</strong> —  We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
+    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: ₹2,000</strong> —  We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
     <div class="setup-fee-note reveal" style="margin-top:8px">✅ 7-day free trial &nbsp;·&nbsp;✅ No credit card required &nbsp;·&nbsp;✅ Cancel any time &nbsp;·&nbsp;✅ All Indian +91 numbers supported</div>
   </div>
 </section>
@@ -830,8 +830,8 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
 
 <script>
 let isAnnual=false;
-const monthly=[999,1999,2999];
-const annual=[9990,19990,29990];
+const monthly=[1499,1999,2999];
+const annual=[14990,19990,29990];
 const fmt=n=>n.toLocaleString('en-IN');
 function toggleBilling(){{
   isAnnual=!isAnnual;
@@ -1124,7 +1124,7 @@ async def admin_activate_page(request: Request):
 </div>
 <script>
 const KEY = '{key}';
-const PLANS = {{starter:999, pro:1999, suite:2999}};
+const PLANS = {{starter:1499, pro:1999, suite:2999}};
 
 async function load() {{
   const r = await fetch('/admin/pending?key=' + KEY);
@@ -1175,7 +1175,7 @@ async function load() {{
           <div class="field">
             <label>Plan</label>
             <select id="plan-${{c.id}}">
-              <option value="starter" ${{c.plan==='starter'?'selected':''}}>Starter — ₹999/mo</option>
+              <option value="starter" ${{c.plan==='starter'?'selected':''}}>Starter — ₹1,499/mo</option>
               <option value="pro" ${{c.plan==='pro'?'selected':''}}>Pro — ₹1,999/mo</option>
               <option value="suite" ${{c.plan==='suite'?'selected':''}}>Suite — ₹2,999/mo</option>
             </select>
@@ -1482,7 +1482,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
     <div class="plans">
       <div class="plan-card {'selected' if plan=='starter' else ''}" id="card-starter" onclick="selectPlan('starter')">
         <h3>Starter</h3>
-        <div class="price" id="price-starter">&#8377;999<span id="cycle-starter">/mo</span></div>
+        <div class="price" id="price-starter">&#8377;1,499<span id="cycle-starter">/mo</span></div>
         <div class="plan-saving" id="saving-starter"></div>
         <ul>
           <li>AI appointment booking</li>
@@ -1560,7 +1560,7 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
           <div class="field full">
             <label for="plan">Selected Plan *</label>
             <select id="plan" name="plan" required>
-              <option value="starter" {'selected' if plan=='starter' else ''}>Starter — ₹999/month</option>
+              <option value="starter" {'selected' if plan=='starter' else ''}>Starter — ₹1,499/month</option>
               <option value="pro" {'selected' if plan in ('pro','') else ''}>Pro — ₹1,999/month · Most Popular</option>
               <option value="suite" {'selected' if plan=='suite' else ''}>Suite — ₹2,999/month</option>
             </select>
@@ -1585,8 +1585,8 @@ async def signup_page(request: Request, plan: str = "", ref: str = ""):
   </div>
 
   <script>
-    const MONTHLY = {{starter:999, pro:1999, suite:2999}};
-    const ANNUAL  = {{starter:9990, pro:19990, suite:29990}};
+    const MONTHLY = {{starter:1499, pro:1999, suite:2999}};
+    const ANNUAL  = {{starter:14990, pro:19990, suite:29990}};
     const LABELS  = {{starter:'Starter', pro:'Pro', suite:'Suite'}};
     let isAnnual = false;
 
