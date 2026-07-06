@@ -89,15 +89,19 @@ class Settings:
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     # ── Subscription plan pricing (INR per month) ─────────────────────────────
-    PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "999"))
+    PRICE_STARTER: int = int(os.getenv("PRICE_STARTER", "1499"))
     PRICE_PRO:     int = int(os.getenv("PRICE_PRO",     "1999"))
     PRICE_SUITE:   int = int(os.getenv("PRICE_SUITE",   "2999"))
     # Annual pricing = 10 months price (pay 10, get 12 — ~17% off)
-    PRICE_STARTER_ANNUAL: int = int(os.getenv("PRICE_STARTER_ANNUAL", "9990"))
+    PRICE_STARTER_ANNUAL: int = int(os.getenv("PRICE_STARTER_ANNUAL", "14990"))
     PRICE_PRO_ANNUAL:     int = int(os.getenv("PRICE_PRO_ANNUAL",     "19990"))
     PRICE_SUITE_ANNUAL:   int = int(os.getenv("PRICE_SUITE_ANNUAL",   "29990"))
     # One-time setup fee charged on trial-to-paid conversion
-    SETUP_FEE:     int = int(os.getenv("SETUP_FEE",     "1499"))
+    SETUP_FEE:     int = int(os.getenv("SETUP_FEE",     "2000"))
+    # Legacy prices for clients grandfathered before the price change (2026-07-06)
+    PRICE_STARTER_LEGACY:        int = int(os.getenv("PRICE_STARTER_LEGACY",        "999"))
+    PRICE_STARTER_ANNUAL_LEGACY: int = int(os.getenv("PRICE_STARTER_ANNUAL_LEGACY", "9990"))
+    PRICE_CHANGE_DATE:           str = os.getenv("PRICE_CHANGE_DATE", "2026-07-06")
 
     # ── Razorpay (UPI auto-pay) ───────────────────────────────────────────────
     # Create at https://dashboard.razorpay.com → Settings → API Keys
