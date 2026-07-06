@@ -39,6 +39,34 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 
+# ── Grandfathered pricing helper ──────────────────────────────────────────────
+
+def _plan_price(client: dict, plan: str, annual: bool = False) -> int:
+    """
+    Return the correct subscription price for a client.
+
+    Clients created before PRICE_CHANGE_DATE are grandfathered at legacy prices
+    so existing subscribers are never silently charged more.
+    New clients (created on or after PRICE_CHANGE_DATE) pay current prices.
+    """
+    created = (client.get("created_at") or "")[:10]  # "YYYY-MM-DD"
+    is_legacy = created < settings.PRICE_CHANGE_DATE
+
+    if annual:
+        prices = {
+            "starter": settings.PRICE_STARTER_ANNUAL_LEGACY if is_legacy else settings.PRICE_STARTER_ANNUAL,
+            "pro":     settings.PRICE_PRO_ANNUAL,
+            "suite":   settings.PRICE_SUITE_ANNUAL,
+        }
+    else:
+        prices = {
+            "starter": settings.PRICE_STARTER_LEGACY if is_legacy else settings.PRICE_STARTER,
+            "pro":     settings.PRICE_PRO,
+            "suite":   settings.PRICE_SUITE,
+        }
+    return prices.get(plan, prices["starter"])
+
+
 # ── Client validation guard ───────────────────────────────────────────────────
 
 def _valid_phone_id(client: dict) -> bool:
@@ -398,12 +426,6 @@ async def _run_monthly_invoices() -> None:
     period_end   = f"{year:04d}-{month:02d}-{last_day:02d}"
     due_date     = (now + timedelta(days=settings.INVOICE_DUE_DAYS)).strftime("%Y-%m-%d")
 
-    plan_prices = {
-        "starter": settings.PRICE_STARTER,
-        "pro":     settings.PRICE_PRO,
-        "suite":   settings.PRICE_SUITE,
-    }
-
     try:
         clients = db.get_all_active_clients()
         sent_count = 0
@@ -430,7 +452,7 @@ async def _run_monthly_invoices() -> None:
                 continue
 
             plan   = (client.get("plan") or "starter").lower()
-            amount = float(plan_prices.get(plan, settings.PRICE_STARTER))
+            amount = float(_plan_price(client, plan))
 
             clinic_name = (
                 db.get_all_clinic_settings(client_id).get("clinic_name")
@@ -927,18 +949,7 @@ async def _get_or_create_trial_payment_url(client: dict, cli_settings: dict) -> 
     billing_cycle = (client.get("billing_cycle") or "monthly").lower()
     is_annual     = billing_cycle == "annual"
 
-    plan_prices_monthly = {
-        "starter": settings.PRICE_STARTER,
-        "pro":     settings.PRICE_PRO,
-        "suite":   settings.PRICE_SUITE,
-    }
-    plan_prices_annual = {
-        "starter": settings.PRICE_STARTER_ANNUAL,
-        "pro":     settings.PRICE_PRO_ANNUAL,
-        "suite":   settings.PRICE_SUITE_ANNUAL,
-    }
-    base_price   = float(plan_prices_annual.get(plan, settings.PRICE_STARTER_ANNUAL) if is_annual
-                         else plan_prices_monthly.get(plan, settings.PRICE_STARTER))
+    base_price   = float(_plan_price(client, plan, annual=is_annual))
     total_amount = float(settings.SETUP_FEE) + base_price
     period_days  = 365 if is_annual else 30
     cycle_label  = f"1-year {plan.title()}" if is_annual else f"first month {plan.title()}"
@@ -1028,13 +1039,8 @@ async def _run_trial_automation() -> None:
                 or client.get("doctor_name")
                 or "Doctor"
             )
-            plan = (client.get("plan") or "starter").lower()
-            plan_prices = {
-                "starter": settings.PRICE_STARTER,
-                "pro":     settings.PRICE_PRO,
-                "suite":   settings.PRICE_SUITE,
-            }
-            monthly_price = plan_prices.get(plan, settings.PRICE_STARTER)
+            plan          = (client.get("plan") or "starter").lower()
+            monthly_price = _plan_price(client, plan)
 
             try:
                 trial_ends = datetime.fromisoformat(
