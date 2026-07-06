@@ -8,7 +8,7 @@ from the correct tenant's DB rows and sends WhatsApp from the right phone_id.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import agent
 import whatsapp
@@ -72,6 +72,10 @@ async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> No
     else:
         footer = "_To cancel or reschedule, please call the clinic._"
 
+    _ist = timezone(timedelta(hours=5, minutes=30))
+    today_str = datetime.now(_ist).strftime("%Y-%m-%d")
+    is_today = date_str == today_str
+
     confirmation = (
         f"✅ *Appointment Confirmed!*\n"
         f"_{clinic_name}_\n\n"
@@ -81,14 +85,14 @@ async def _send_booking_confirmation(phone: str, appt: dict, client: dict) -> No
         f"⏰ *Time:* {slot}\n"
         f"📍 *Location:* {clinic_address}\n\n"
         f"🔖 *Booking ID:* `{booking_id}`\n\n"
-        f"A reminder will be sent 24 hours before your appointment. 🙏\n\n"
-        f"{footer}"
+        + ("" if is_today else "A reminder will be sent 24 hours before your appointment. 🙏\n\n")
+        + f"{footer}"
     )
-    # ── Patient confirmation ──────────────────────────────────────────────────
+    # ── Patient confirmation ────────────────────────────────────────────
     await whatsapp.send_text(phone, confirmation, phone_id=client_pid, token=client_token)
     logger.info("[Booking] Confirmation sent to patient (client=%s, appt=%s)", client_id, appt_id)
 
-    # ── Doctor new-booking alert ──────────────────────────────────────────────
+    # ── Doctor new-booking alert ──────────────────────────────────────────
     doctor_phone = (client.get("contact_phone") or "").strip()
     if doctor_phone:
         patient_wa = f"+{phone}" if not phone.startswith("+") else phone
