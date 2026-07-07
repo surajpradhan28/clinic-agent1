@@ -438,6 +438,37 @@ _TOOLS_DOCTOR = [
     {
         "type": "function",
         "function": {
+            "name": "book_patient_appointment",
+            "description": (
+                "Book an appointment for a patient on their behalf "
+                "(phone-in, walk-in, or any off-WhatsApp request). "
+                "Always call check_available_slots first to confirm the slot is free. "
+                "patient_phone must include country code, no '+' or spaces (e.g. 919876543210)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "patient_name": {
+                        "type": "string",
+                        "description": "Full name of the patient (first and last name)",
+                    },
+                    "patient_phone": {
+                        "type": "string",
+                        "description": (
+                            "Patient's WhatsApp number with country code, no '+' or spaces "
+                            "(e.g. 919876543210 for India)"
+                        ),
+                    },
+                    "date":      {"type": "string", "description": "YYYY-MM-DD"},
+                    "slot_time": {"type": "string", "description": "HH:MM"},
+                },
+                "required": ["patient_name", "patient_phone", "date", "slot_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_clinic_info",
             "description": "Update clinic name, address, phone number, or doctor name.",
             "parameters": {
@@ -653,6 +684,7 @@ _DOCTOR_STARTER_FNS: frozenset = frozenset({
     "check_available_slots", "view_appointments",
     "block_slots", "unblock_slots", "view_blocked_slots", "view_clinic_info",
     "save_visit_notes", "view_patient_history", "get_clinic_stats",
+    "book_patient_appointment",
 })
 _DOCTOR_PRO_FNS: frozenset = _DOCTOR_STARTER_FNS | frozenset({
     "update_clinic_info", "broadcast_message",
@@ -1282,6 +1314,115 @@ async def _execute_doctor_function(fn_name: str, fn_args: dict, client: dict) ->
             "reasons": list({r.get("reason", "") for r in rows if r.get("reason")}),
         })
 
+    elif fn_name == "book_patient_appointment":
+        patient_name  = (fn_args.get("patient_name") or "").strip()
+        patient_phone = (fn_args.get("patient_phone") or "").strip().lstrip("+").replace(" ", "")
+        date          = fn_args.get("date", "")
+        slot_time     = fn_args.get("slot_time", "")
+
+        if not patient_name or not patient_phone or not date or not slot_time:
+            return json.dumps({
+                "success": False,
+                "error": "patient_name, patient_phone, date, and slot_time are all required.",
+            })
+
+        # ── Weekly-off guard ─────────────────────────────────────────────────
+        try:
+            _booking_day = datetime.strptime(date, "%Y-%m-%d").strftime("%A")
+            _per_clinic_off_raw = db.get_clinic_setting(client_id, "weekly_off_days") or ""
+            _per_clinic_off = [d.strip() for d in _per_clinic_off_raw.split(",") if d.strip()]
+            _all_off = list(set(settings.WEEKLY_OFF_DAYS + _per_clinic_off))
+            if _booking_day in _all_off:
+                return json.dumps({
+                    "success": False,
+                    "error": f"The clinic is closed on {_booking_day}s.",
+                })
+        except Exception:
+            pass
+
+        try:
+            appt = db.create_appointment(client_id, patient_phone, patient_name, date, slot_time)
+            info = _get_clinic_info(client_id)
+
+            try:
+                date_display = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %d %B %Y")
+            except Exception:
+                date_display = date
+
+            try:
+                booking_id = f"BK-{date.replace('-', '')}-{int(appt['id']):04d}"
+            except Exception:
+                booking_id = str(appt.get("id", ""))
+
+            plan = client.get("plan", "starter").lower()
+            footer = (
+                "_To cancel or reschedule, just reply 'cancel' or 'reschedule' anytime._"
+                if plan in ("pro", "suite")
+                else "_To cancel or reschedule, please call the clinic._"
+            )
+            today_str = datetime.now(_IST).strftime("%Y-%m-%d")
+            reminder_line = (
+                ""
+                if date == today_str
+                else "A reminder will be sent 24 hours before your appointment. 🙏\n\n"
+            )
+
+            confirmation = (
+                f"✅ *Appointment Confirmed!*\n"
+                f"_{info['clinic_name']}_\n\n"
+                f"👤 *Patient:* {patient_name}\n"
+                f"👨‍⚕️ *Doctor:* {info['doctor_name']}\n"
+                f"📅 *Date:* {date_display}\n"
+                f"⏰ *Time:* {slot_time}\n"
+                f"📍 *Location:* {info['clinic_address']}\n\n"
+                f"🔖 *Booking ID:* `{booking_id}`\n\n"
+                f"{reminder_line}{footer}"
+            )
+
+            notified_msg = ""
+            if db.check_patient_optin(client_id, patient_phone):
+                try:
+                    await whatsapp.send_text(
+                        patient_phone, confirmation,
+                        phone_id=client_pid, token=client_token,
+                    )
+                    notified_msg = f" Confirmation sent to +{patient_phone}."
+                except Exception as wa_exc:
+                    logger.error("[DoctorBooking] WhatsApp to %s failed: %s", patient_phone, wa_exc)
+                    notified_msg = " (WhatsApp confirmation could not be sent.)"
+            else:
+                notified_msg = f" Patient +{patient_phone} hasn't opted in — confirmation not sent via WhatsApp."
+
+            try:
+                analytics.appointment_booked(
+                    patient_phone, client_id, date, slot_time,
+                    plan=client.get("plan", "starter"),
+                    is_new_patient=False,
+                )
+            except Exception:
+                pass
+
+            return json.dumps({
+                "success":        True,
+                "appointment_id": appt["id"],
+                "patient_name":   patient_name,
+                "patient_phone":  patient_phone,
+                "date":           date,
+                "slot_time":      slot_time,
+                "message": f"✅ Appointment booked for {patient_name} on {date_display} at {slot_time}.{notified_msg}",
+            })
+        except ValueError as exc:
+            logger.warning("book_patient_appointment slot conflict: %s", exc)
+            return json.dumps({
+                "success":    False,
+                "slot_taken": True,
+                "error":      str(exc),
+                "suggestion": "That slot is already taken. Check available slots and pick a different time.",
+            })
+        except Exception as exc:
+            logger.error("book_patient_appointment error: %s", exc)
+            return json.dumps({"success": False, "error": str(exc)})
+
     elif fn_name == "update_clinic_info":
         field = fn_args.get("field", "")
         value = fn_args.get("value", "").strip()
@@ -1792,6 +1933,7 @@ def _build_doctor_prompt(client: dict) -> str:
 Today is {today}.
 
 You help the doctor manage their clinic schedule. Available actions:
+- Book an appointment for a patient (phone-in, walk-in, or referral)
 - Block / unblock slots or entire days
 - View appointments and blocked slots for any date
 - Check available slots
@@ -1827,11 +1969,22 @@ Rules:
 
   Here's what you can do:
   📅 *Today's list* — "show today"
+  📱 *Book for patient* — "book Priya Sharma 9876543210 tomorrow 10am"
   🚫 *Block slots* — "block 10am" / "block all day tomorrow"
   📝 *Visit notes* — "notes for Rahul: fever, rest 3 days"
   📢 *Broadcast* — "send message to all patients: clinic closed Monday"
   📊 *Stats* — "show stats"
   ⚙️ *Clinic info* — "update clinic name / address / phone"
+
+- Booking an appointment for a patient (phone-in / walk-in):
+  Natural phrases to recognise and act on immediately:
+    "Book Priya Sharma 9876543210 for tomorrow 10am"
+    "Schedule Rahul Kumar 919123456789 on Friday at 11:30"
+    "Add patient Sunita Patel 9812345678 — 15 July 17:00"
+  → Always call check_available_slots first to confirm the slot is free, then call book_patient_appointment.
+  → patient_phone must include country code (91 for India), no '+' or spaces.
+  → If the doctor does not provide the patient's phone, ask: "Please share the patient's WhatsApp number (with country code, e.g. 919XXXXXXXXX)."
+  → A WhatsApp confirmation is automatically sent to the patient if they are on record.
 
 - Adding visit notes (most common workflow):
   The doctor does NOT need to know the appointment ID.
