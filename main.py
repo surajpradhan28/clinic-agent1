@@ -638,72 +638,66 @@ footer{{background:var(--navy);padding:40px 24px;border-top:1px solid rgba(255,2
   <div class="container">
     <div class="text-center reveal">
       <div class="section-label">Pricing</div>
-      <h2>Simple, Affordable Pricing</h2>
-      <p class="section-sub">No hidden fees. Cancel any time. All plans include free setup support and a 7-day free trial.</p>
+      <h2>Pay Only for What You Use</h2>
+      <p class="section-sub">Buy a message pack. Patients book, reschedule, and get reminders — every message counts from the pack. Top up any time. No monthly lock-in.</p>
     </div>
-    <div class="pricing-toggle">
-      <span class="toggle-label active" id="lblMonthly">Monthly</span>
-      <div class="toggle-track" id="toggleTrack" onclick="toggleBilling()"><div class="toggle-thumb"></div></div>
-      <span class="toggle-label" id="lblAnnual">Annual</span>
-      <span class="save-badge">Save 2 months free!</span>
-    </div>
-    <div class="pricing-grid">
+
+    <div class="pricing-grid" style="max-width:960px;margin:48px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;">
+
       <div class="plan-card reveal">
-        <div class="plan-name">Starter</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price1">1,499</span><span class="plan-period">/month</span></div>
-        <div class="plan-annual" id="annual1"></div>
-        <div class="plan-desc">Perfect for clinics just getting started with WhatsApp automation.</div>
+        <div class="plan-name">Starter Pack</div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount">499</span></div>
+        <div class="plan-annual" style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:4px;">500 messages</div>
+        <div class="plan-desc">Great for small clinics or first-time users.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>WhatsApp appointment booking</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>24h + 1h automatic reminders</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>New patient intake form</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Doctor visit notes &amp; patient history</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Post-visit follow-up messages</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Web admin dashboard</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Unlimited patients</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Cancellation &amp; reschedule</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>500 WhatsApp interactions</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Appointment booking</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>24h + 1h reminders</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Visit notes &amp; history</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>All features included</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>~1 rupee per message</span></div>
         </div>
-        <a href="/signup?plan=starter"><button class="btn-plan outline">Start Free Trial</button></a>
+        <a href="{wa_link}"><button class="btn-plan outline">Get This Pack</button></a>
       </div>
+
       <div class="plan-card popular reveal">
-        <div class="popular-badge">⭐ Most Popular</div>
-        <div class="plan-name">Pro</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price2">1,999</span><span class="plan-period">/month</span></div>
-        <div class="plan-annual" id="annual2"></div>
-        <div class="plan-desc">Best for established clinics that want full patient self-service.</div>
+        <div class="popular-badge">⭐ Best Value</div>
+        <div class="plan-name">Growth Pack</div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount">999</span></div>
+        <div class="plan-annual" style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:4px;">1,500 messages</div>
+        <div class="plan-desc">Ideal for busy clinics seeing 20–40 patients daily.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>Everything in Starter</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Patient cancellation via WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Patient rescheduling via WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Auto waitlist for full slots</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Broadcast to all patients</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Priority WhatsApp support</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Doctor WhatsApp controls</span></div>
-          <div class="pf"><span class="pf-x">✗</span><span style="color:var(--muted)">Daily morning schedule</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>1,500 WhatsApp interactions</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Everything in Starter Pack</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Cancellation &amp; reschedule</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Post-visit follow-ups</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>~0.66 rupees per message</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span><strong>33% cheaper per message</strong></span></div>
         </div>
-        <a href="/signup?plan=pro"><button class="btn-plan primary">Start Free Trial</button></a>
+        <a href="{wa_link}"><button class="btn-plan primary">Get This Pack</button></a>
       </div>
+
       <div class="plan-card reveal">
-        <div class="plan-name">Suite</div>
-        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount" id="price3">2,999</span><span class="plan-period">/month</span></div>
-        <div class="plan-annual" id="annual3"></div>
-        <div class="plan-desc">For doctors who want full automation and schedule visibility.</div>
+        <div class="plan-name">Pro Pack</div>
+        <div class="plan-price"><span class="plan-rupee">&#8377;</span><span class="plan-amount">2,499</span></div>
+        <div class="plan-annual" style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:4px;">5,000 messages</div>
+        <div class="plan-desc">For high-volume clinics or multi-doctor setups.</div>
         <div class="plan-features">
-          <div class="pf"><span class="pf-check">✓</span><span>Everything in Pro</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Doctor WhatsApp commands</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Block / unblock time slots</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Daily 7 AM schedule on WhatsApp</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Nightly 11 PM notes reminder</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Full patient visit history &amp; notes</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Custom clinic hours per date</span></div>
-          <div class="pf"><span class="pf-check">✓</span><span>Dedicated support channel</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>5,000 WhatsApp interactions</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Everything in Growth Pack</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Daily morning schedule</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>Doctor WhatsApp controls</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span>~0.50 rupees per message</span></div>
+          <div class="pf"><span class="pf-check">✓</span><span><strong>50% cheaper per message</strong></span></div>
         </div>
-        <a href="/signup?plan=suite"><button class="btn-plan outline">Start Free Trial</button></a>
+        <a href="{wa_link}"><button class="btn-plan outline">Get This Pack</button></a>
       </div>
+
     </div>
-    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: ₹2,000</strong> —  We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
-    <div class="setup-fee-note reveal" style="margin-top:8px">✅ 7-day free trial &nbsp;·&nbsp;✅ No credit card required &nbsp;·&nbsp;✅ Cancel any time &nbsp;·&nbsp;✅ All Indian +91 numbers supported</div>
+
+    <div class="setup-fee-note reveal" style="margin-top:28px"><strong>One-time setup fee: &#8377;2,000</strong> — We register your WhatsApp number, configure your bot, and run a live test. Done in 24 hours.</div>
+    <div class="setup-fee-note reveal" style="margin-top:8px">&#9989; Credits never expire &nbsp;·&nbsp; &#9989; Top up any time &nbsp;·&nbsp; &#9989; 7-day free trial &nbsp;·&nbsp; &#9989; No monthly lock-in</div>
+
   </div>
 </section>
 
