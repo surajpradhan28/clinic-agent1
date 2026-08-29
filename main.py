@@ -1025,6 +1025,14 @@ async def admin_action(request: Request):
             except Exception as rzp_exc:
                 return JSONResponse({"ok": False, "error": f"Razorpay API error: {rzp_exc}"}, status_code=500)
 
+        elif action == "add_credits":
+            cid    = int(body["client_id"])
+            amount = int(body["amount"])  # e.g. 500, 1500, 5000
+            notes  = body.get("notes", "Manual top-up")
+            new_total = db.add_credits(cid, amount, notes)
+            logger.info("[Admin] Credits +%d added to client %s → %d total", amount, cid, new_total)
+            return JSONResponse({"ok": True, "credits": new_total})
+
         else:
             return JSONResponse({"ok": False, "error": f"Unknown action: {action}"}, status_code=400)
 
@@ -2844,9 +2852,48 @@ async def receive_message(request: Request):
             await handle_followup_response(phone, name, text, client=client)
             return JSONResponse({"status": "ok", "flow": "followup"})
 
-        # ── STEP 6: AI booking agent ──────────────────────────────────────────
+                # ── STEP 6 pre-check: Message credits ────────────────────────────────
+        _credits = db.get_message_credits(client_id)
+        _doctor_phone = (client.get("contact_phone") or "").strip()
+        if _credits <= 0:
+            logger.warning("[Credits] Exhausted (client=%s) — blocking msg from %s", client_id, phone)
+            await whatsapp.send_text(
+                phone,
+                "⚠️ We're unable to process your message right now. "
+                "Please contact the clinic directly.",
+                phone_id=client_pid, token=client_token,
+            )
+            if _doctor_phone:
+                try:
+                    await whatsapp.send_text(
+                        _doctor_phone,
+                        "🚫 *Message credits exhausted!*\n\n"
+                        "Patients can no longer reach you via WhatsApp. "
+                        "Please top up to restore service.\n\n"
+                        "_Contact support to purchase a credit pack._",
+                        phone_id=client_pid, token=client_token,
+                    )
+                except Exception:
+                    pass
+            return JSONResponse({"status": "ok", "flow": "credits_exhausted"})
+
+# ── STEP 6: AI booking agent ──────────────────────────────────────────
         logger.info("[Router] →  Booking flow (client=%s)", client_id)
         await handle_booking_flow(phone, name, text, client=client)
+
+        # ── Deduct 1 credit + send low-credit warning if needed ──────────────
+        _remaining = db.deduct_credit(client_id)
+        if 0 < _remaining <= 50 and _doctor_phone:
+            try:
+                await whatsapp.send_text(
+                    _doctor_phone,
+                    f"⚠️ *Low credits — {_remaining} messages remaining!*\n\n"
+                    "Please top up soon to avoid service interruption.\n"
+                    "_Contact support to purchase a credit pack._",
+                    phone_id=client_pid, token=client_token,
+                )
+            except Exception:
+                pass
         return JSONResponse({"status": "ok", "flow": "booking"})
 
     except Exception as exc:
