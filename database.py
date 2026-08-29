@@ -1545,6 +1545,66 @@ def invoice_exists(client_id: int, period_start: str) -> bool:
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MESSAGE CREDITS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_message_credits(client_id: int) -> int:
+    """Return remaining message credits for a clinic (0 if exhausted)."""
+    try:
+        db = get_db()
+        result = (
+            db.table("clients")
+            .select("message_credits")
+            .eq("id", client_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return 0
+        credits = result.data[0].get("message_credits")
+        return int(credits) if credits is not None else 0
+    except Exception as exc:
+        logger.warning("get_message_credits(%s) error: %s", client_id, exc)
+        return 0
+
+
+def deduct_credit(client_id: int) -> int:
+    """Atomically deduct 1 credit. Returns remaining credits after deduction."""
+    try:
+        db = get_db()
+        result = db.rpc("decrement_credits", {"p_client_id": client_id}).execute()
+        remaining = result.data if isinstance(result.data, int) else get_message_credits(client_id)
+        logger.debug("Credit deducted (client=%s) → %d remaining", client_id, remaining)
+        return remaining
+    except Exception as exc:
+        logger.warning("deduct_credit RPC failed (%s): %s — falling back", client_id, exc)
+        db = get_db()
+        current = get_message_credits(client_id)
+        new_val = max(0, current - 1)
+        db.table("clients").update({"message_credits": new_val}).eq("id", client_id).execute()
+        return new_val
+
+
+def add_credits(client_id: int, amount: int, notes: str = "") -> int:
+    """Add credits to a clinic account. Returns new total. Logs to credit_transactions."""
+    db = get_db()
+    current = get_message_credits(client_id)
+    new_val = current + amount
+    db.table("clients").update({"message_credits": new_val}).eq("id", client_id).execute()
+    try:
+        db.table("credit_transactions").insert({
+            "client_id": client_id,
+            "amount": amount,
+            "notes": notes,
+            "balance_after": new_val,
+        }).execute()
+    except Exception as exc:
+        logger.warning("credit_transactions insert failed: %s", exc)
+    logger.info("Credits added (client=%s): +%d → %d total", client_id, amount, new_val)
+    return new_val
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
